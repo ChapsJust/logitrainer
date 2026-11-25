@@ -54,6 +54,7 @@ export function isDue(due: number | null, now = Date.now()): boolean {
 export function dueLabel(due: number | null, now = Date.now()): string {
   if (due === null) return '';
   const days = Math.round((startOfDay(due) - startOfDay(now)) / DAY);
+  if (days < -30) return 'en retard';
   if (days < 0) return days === -1 ? 'en retard d’un jour' : `en retard de ${-days} j`;
   if (days === 0) return "aujourd'hui";
   if (days === 1) return 'demain';

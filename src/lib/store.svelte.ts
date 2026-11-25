@@ -120,6 +120,94 @@ export function deletePlace(id: string): void {
   db.places = db.places.filter((l) => l.id !== id);
 }
 
+/**
+ * Palais à plusieurs zones qui pourraient être des palais séparés (ex. « École » dont chaque
+ * zone est une classe) : pas encore dans un lieu, et l'utilisateur n'a pas dit « c'est un seul trajet ».
+ */
+export function splitCandidates(): Palace[] {
+  const keep = new Set(db.settings.keepAsPalace ?? []);
+  return db.palaces.filter((p) => !p.placeId && !keep.has(p.id) && p.rooms.filter((r) => r.name).length >= 2);
+}
+
+/** Ce que donnera la transformation : un palais par zone. */
+export function splitPreview(p: Palace): { name: string; loci: number }[] {
+  return p.rooms
+    .filter((r) => r.name || r.loci.length)
+    .map((r, i) => ({ name: r.name || `${p.name} ${i + 1}`, loci: r.loci.length }));
+}
+
+/**
+ * Transforme un palais en lieu : chaque zone devient son propre palais, dans le même ordre.
+ * Les loci gardent leur identité, donc ce qui y est déposé suit. Un contenu réparti sur
+ * plusieurs zones est découpé : une partie par nouveau palais, même titre.
+ */
+export function splitPalaceIntoPlace(p: Palace): Place {
+  const lower = p.name.toLowerCase();
+  const icon: PlaceIcon = /maison|appart|chalet|chambre|chez/.test(lower)
+    ? 'home'
+    : /bureau|travail|job|usine/.test(lower)
+      ? 'briefcase'
+      : /parc|jardin|for[eê]t|plage/.test(lower)
+        ? 'tree'
+        : 'building';
+  const place = createPlace(p.name, icon);
+  const now = Date.now();
+  const rooms = p.rooms.filter((r) => r.name || r.loci.length);
+  const created: Palace[] = rooms.map((r, i) => ({
+    id: uid(),
+    name: r.name || `${p.name} ${i + 1}`,
+    emoji: '',
+    description: '',
+    placeId: place.id,
+    subject: p.subject,
+    rooms: [{ id: uid(), name: '', loci: r.loci.map((l) => ({ ...l })) }],
+    createdAt: p.createdAt,
+    updatedAt: now,
+    lastQuiz: p.lastQuiz ? { ...p.lastQuiz } : undefined,
+    review: p.review ? { ...p.review } : undefined,
+  }));
+  const owner = new Map<string, string>();
+  created.forEach((np) => np.rooms[0]!.loci.forEach((l) => owner.set(l.id, np.id)));
+
+  const extra: Content[] = [];
+  for (const c of db.contents) {
+    if (c.palaceId !== p.id) continue;
+    const groups = new Map<string, Content['items']>();
+    for (const [locusId, item] of Object.entries(c.items)) {
+      const target = owner.get(locusId);
+      if (!target) continue;
+      const g = groups.get(target) ?? {};
+      g[locusId] = item;
+      groups.set(target, g);
+    }
+    const targets = created.map((np) => np.id).filter((id) => groups.has(id));
+    if (targets.length === 0) {
+      c.palaceId = created[0]?.id ?? c.palaceId;
+      continue;
+    }
+    c.palaceId = targets[0]!;
+    c.items = groups.get(targets[0]!) ?? {};
+    for (const t of targets.slice(1)) {
+      extra.push({
+        ...c,
+        id: uid(),
+        palaceId: t,
+        items: groups.get(t) ?? {},
+        lastQuiz: c.lastQuiz ? { ...c.lastQuiz } : undefined,
+        review: c.review ? { ...c.review } : undefined,
+      });
+    }
+  }
+  db.contents.push(...extra);
+  const at = db.palaces.findIndex((x) => x.id === p.id);
+  db.palaces.splice(at, 1, ...created);
+  return place;
+}
+
+export function keepAsPalace(p: Palace): void {
+  db.settings.keepAsPalace = [...new Set([...(db.settings.keepAsPalace ?? []), p.id])];
+}
+
 /* ---------- Palais ---------- */
 
 export function getPalace(id: string): Palace | undefined {

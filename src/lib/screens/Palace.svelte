@@ -27,7 +27,7 @@
   import type { Locus, Room } from '../types';
   import Avatar from '../components/Avatar.svelte';
   import { OCCUPANCY_LABEL, freePalaces, overlaps, palaceUse } from '../interference';
-  import { db, getPlace } from '../store.svelte';
+  import { db, getPlace, keepAsPalace, splitCandidates, splitPalaceIntoPlace, splitPreview } from '../store.svelte';
   import PlaceIconView from '../components/PlaceIconView.svelte';
   import { tick } from 'svelte';
 
@@ -41,6 +41,23 @@
   // svelte-ignore state_referenced_locally
   let tab = $state(focus ? 'trajet' : initialTab);
   const place = $derived(getPlace(palace?.placeId));
+
+  /* ---------- Transformer en lieu (chaque zone devient un palais) ---------- */
+  const canSplit = $derived(!!palace && palace.rooms.filter((r) => r.name).length >= 2);
+  const suggestSplit = $derived(!!palace && splitCandidates().some((c) => c.id === palace.id));
+  let splitOpen = $state(false);
+
+  function doSplit() {
+    if (!palace) return;
+    const p = palace;
+    splitOpen = false;
+    editPalace = false;
+    let placeId = '';
+    withUndo(`« ${p.name} » est devenu un lieu`, () => {
+      placeId = splitPalaceIntoPlace(p).id;
+    });
+    nav.replace({ name: 'place', id: placeId });
+  }
 
   /* ---------- Arrivée depuis la recherche : défiler jusqu'au locus et le surligner ---------- */
   let flash = $state<string | null>(null);
@@ -313,6 +330,25 @@
       {/if}
     {/if}
 
+    {#if suggestSplit}
+      <div class="card-filled split">
+        <div class="row" style="align-items: flex-start; gap: 12px">
+          <Icon name="building" class="primary" />
+          <span class="grow">
+            <span class="title-m">Tes zones sont des endroits séparés ?</span>
+            <span class="body-m onv">
+              Si chaque zone est un trajet à part (ex. une classe par matière), transforme « {palace.name} » en lieu : chaque
+              zone devient son propre palais. Rien n'est perdu.
+            </span>
+          </span>
+        </div>
+        <div class="row split-actions">
+          <button class="btn filled" onclick={() => (splitOpen = true)}>Transformer en lieu</button>
+          <button class="btn text" onclick={() => keepAsPalace(palace)}>C'est un seul trajet</button>
+        </div>
+      </div>
+    {/if}
+
     <div class="segmented" role="tablist">
       <button role="tab" class:on={tab === 'trajet'} aria-selected={tab === 'trajet'} onclick={() => setTab('trajet')}>
         {#if tab === 'trajet'}<Icon name="check" />{/if}Trajet
@@ -521,6 +557,15 @@
       <span>Description (facultatif)</span>
       <textarea bind:value={palace.description} rows="2" placeholder="Ex. l'appart de la rue Saint-Denis, 2015-2019"></textarea>
     </label>
+    {#if canSplit}
+      <button class="list-item split-item" onclick={() => (splitOpen = true)}>
+        <span class="num"><Icon name="building" size={20} /></span>
+        <span class="li-text">
+          <span class="li-head">Transformer en lieu</span>
+          <span class="li-sup">Chaque zone devient son propre palais</span>
+        </span>
+      </button>
+    {/if}
     {#snippet footer()}
       <button class="btn text danger-text" onclick={() => (confirmDeletePalace = true)}>Supprimer</button>
       <span class="grow"></span>
@@ -705,6 +750,27 @@
     </form>
   </Sheet>
 
+  <!-- Transformer en lieu -->
+  <Sheet bind:open={splitOpen} title="Transformer en lieu">
+    <p class="body-m onv" style="margin-bottom: 12px">
+      « {palace.name} » devient un <b>lieu</b> avec un palais par zone. Les loci et ce que tu y as déposé suivent ; un contenu
+      réparti sur plusieurs zones est partagé entre les nouveaux palais.
+    </p>
+    <div class="preview-split">
+      {#each splitPreview(palace) as z (z.name)}
+        <div class="row pz">
+          <span class="num"><Icon name="home" size={18} /></span>
+          <span class="grow body-l ellipsis">{z.name}</span>
+          <span class="label-m onv">{plural(z.loci, 'locus', 'loci')}</span>
+        </div>
+      {/each}
+    </div>
+    {#snippet footer()}
+      <button class="btn text" onclick={() => (splitOpen = false)}>Annuler</button>
+      <button class="btn filled" onclick={doSplit}>Transformer</button>
+    {/snippet}
+  </Sheet>
+
   <QuizStart
     bind:open={quizOpen}
     kind="trajet"
@@ -822,6 +888,35 @@
     background:
       radial-gradient(closest-side, var(--surface) 82%, transparent 83%),
       conic-gradient(var(--p) calc(var(--pct) * 360deg), var(--surface-highest) 0);
+  }
+
+  .split {
+    margin: 12px 16px 0;
+  }
+
+  .split .grow {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .split-actions {
+    gap: 4px;
+    margin-top: 12px;
+    padding-left: 36px;
+    flex-wrap: wrap;
+  }
+
+  .split-item {
+    margin: 0 -24px 8px;
+    padding-left: 24px;
+    width: calc(100% + 48px);
+  }
+
+  .pz {
+    gap: 12px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--divider);
   }
 
   .crumb {
