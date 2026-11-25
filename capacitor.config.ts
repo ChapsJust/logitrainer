@@ -5,7 +5,7 @@ const config: CapacitorConfig = {
   appName: 'Logidex',
   webDir: 'dist',
   android: {
-    backgroundColor: '#0f1115',
+    backgroundColor: '#f5faf7',
   },
 };
 

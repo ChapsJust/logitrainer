@@ -2,11 +2,14 @@
 
 Ton aide-mémoire de **palais mentaux** (méthode des loci), en app Android.
 
-- **Palais → Pièces → Loci** : ton trajet, dans l'ordre, numéroté en continu.
-- **Contenus** : ce que tu déposes dans un palais (une liste, un discours, des dates…). Un même palais peut porter plusieurs contenus ; chaque élément reste accroché à son locus même si tu réorganises le trajet.
-- **Tester** : quiz rapide d'un trajet ou d'un contenu (dans l'ordre, à rebours, au hasard) pour vérifier qu'un palais tient toujours.
+- **Palais → Pièces → Loci** : ton trajet, dans l'ordre, numéroté en continu. Glisser-déposer pour réorganiser (même d'une pièce à l'autre).
+- **Contenus** : ce que tu déposes dans un palais (une liste, un discours, des dates…). Un même palais peut porter plusieurs contenus ; chaque élément reste accroché à son locus.
+- **Promenade** : parcours ton palais en plein écran, un locus à la fois, en glissant.
+- **Révision espacée** : après chaque test, Logidex calcule la prochaine révision (1 j, 3 j, 1 sem., 2 sem., 1 mois…). L'accueil affiche ce qui est « À revoir aujourd'hui ».
+- **Tester** : trajet, contenu ou nombres, dans l'ordre, à rebours ou au hasard. Glisse la carte : → je savais, ← raté.
 - **Nombres** : ton système d'images de 00 à 99 (système majeur, avec aide).
-- **Recherche** dans tout ton Logidex, **mode sombre**, **export/import** en fichier.
+- **Filet de sécurité** : sauvegarde automatique quotidienne dans `Documents/Logidex` (survit à une désinstallation), « Annuler » après chaque suppression, export/import.
+- Design Material 3 clair/sombre, vibrations, transitions, accueil guidé à la première ouverture.
 
 Tout est stocké **sur ton téléphone**, hors-ligne. Aucun serveur.
 
@@ -107,5 +110,5 @@ android/                projet Android généré par Capacitor
 
 ## Sauvegarde
 
-Les données vivent dans le stockage privé de l'app. **Désinstaller l'app les efface.**
-Fais **Réglages → Exporter** de temps en temps (Drive, courriel…). L'app te le rappelle après 14 jours sans export.
+Les données vivent dans le stockage privé de l'app. En plus, Logidex écrit chaque jour une copie dans `Documents/Logidex` sur le téléphone (les 7 dernières sont gardées) : ces fichiers restent même si tu désinstalles l'app, et se réimportent via **Réglages → Importer**.
+Pour changer de téléphone, utilise **Réglages → Exporter une copie** (Drive, courriel…).

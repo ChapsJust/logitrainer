@@ -12,7 +12,7 @@ function resolved(theme: Theme): 'light' | 'dark' {
 export function applyTheme(theme: Theme): void {
   const t = resolved(theme);
   document.documentElement.dataset.theme = t;
-  const bg = t === 'dark' ? '#0f1115' : '#f6f5fb';
+  const bg = t === 'dark' ? '#0f1513' : '#f5faf7';
   document.querySelector('meta[name="theme-color"]')?.setAttribute('content', bg);
   if (isNative()) {
     // DARK = icônes claires (pour fond sombre), LIGHT = icônes foncées.

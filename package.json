@@ -1,7 +1,7 @@
 {
   "name": "logidex",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Logidex — ton aide-mémoire pour palais mentaux (méthode des loci).",
   "type": "module",
   "packageManager": "pnpm@10.28.0",
@@ -23,7 +23,9 @@
     "@capacitor/browser": "^8.0.5",
     "@capacitor/core": "^8.6.2",
     "@capacitor/filesystem": "^8.1.5",
-    "@capacitor/share": "^8.0.3"
+    "@capacitor/haptics": "^8.0.2",
+    "@capacitor/share": "^8.0.3",
+    "@fontsource-variable/roboto-flex": "^5.3.0"
   },
   "devDependencies": {
     "@capacitor/cli": "^8.6.2",

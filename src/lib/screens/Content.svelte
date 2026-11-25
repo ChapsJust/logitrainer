@@ -1,12 +1,14 @@
 <script lang="ts">
   import TopBar from '../components/TopBar.svelte';
   import Sheet from '../components/Sheet.svelte';
-  import Confirm from '../components/Confirm.svelte';
+  import Icon from '../components/Icon.svelte';
   import QuizStart from '../components/QuizStart.svelte';
   import { deleteContent, filledCount, getContent, getPalace, pasteList, setItem, touch } from '../store.svelte';
   import { nav } from '../nav.svelte';
   import { flatLoci } from '../util';
-  import { toast } from '../app.svelte';
+  import { toast, withUndo } from '../app.svelte';
+  import { contentDue, dueLabel } from '../review';
+  import { haptic } from '../haptics';
 
   let { id }: { id: string } = $props();
 
@@ -14,22 +16,21 @@
   const palace = $derived(content ? getPalace(content.palaceId) : undefined);
   const flat = $derived(palace ? flatLoci(palace) : []);
   const showRooms = $derived(!!palace && (palace.rooms.length > 1 || !!palace.rooms[0]?.name));
+  const filled = $derived(content && palace ? filledCount(content, palace) : 0);
+  const due = $derived(content ? contentDue(content, palace) : null);
 
   let hide = $state(false);
   let revealed = $state<Record<string, boolean>>({});
 
   let editInfo = $state(false);
-  let confirmDelete = $state(false);
   let quizOpen = $state(false);
 
-  // Édition d'un élément
   let editIndex = $state(-1);
   let editOpen = $state(false);
   let draftText = $state('');
   let draftImage = $state('');
   const editing = $derived(flat[editIndex]);
 
-  // Coller une liste
   let pasteOpen = $state(false);
   let pasteText = $state('');
   let pasteStart = $state(1);
@@ -61,6 +62,7 @@
 
   function go(delta: number) {
     commit();
+    haptic.tick();
     const next = editIndex + delta;
     if (next < 0 || next >= flat.length) {
       editOpen = false;
@@ -72,6 +74,7 @@
   function tapRow(i: number, locusId: string) {
     if (hide && !revealed[locusId]) {
       revealed[locusId] = true;
+      haptic.tap();
       return;
     }
     openItem(i);
@@ -84,7 +87,7 @@
     pasteText = '';
     toast(
       overflow > 0
-        ? `${pasteLines.length - overflow} placés · ${overflow} sans locus (ajoute des loci)`
+        ? `${pasteLines.length - overflow} placés, ${overflow} sans locus : ajoute des loci`
         : `${pasteLines.length} éléments placés`,
     );
   }
@@ -97,233 +100,202 @@
 </script>
 
 {#if content && palace}
-  <TopBar back title={content.title} subtitle={`${palace.emoji} ${palace.name} · ${filledCount(content, palace)}/${flat.length}`}>
+  <TopBar back>
     {#snippet actions()}
+      {#if flat.length}
+        <button
+          class="icon-btn"
+          class:on={hide}
+          onclick={() => {
+            hide = !hide;
+            revealed = {};
+          }}
+          aria-label={hide ? 'Tout montrer' : 'Cacher les réponses'}
+        >
+          <Icon name={hide ? 'eyeOff' : 'eye'} size={22} />
+        </button>
+      {/if}
       <button class="icon-btn" onclick={() => (editInfo = true)} aria-label="Modifier le contenu">
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" /></svg>
+        <Icon name="pencil" size={22} />
       </button>
     {/snippet}
   </TopBar>
 
   <div class="page no-nav">
-    {#if content.notes}
-      <p class="muted notes">{content.notes}</p>
-    {/if}
+    <h1 class="headline-m page-title">{content.title}</h1>
+    <p class="body-m page-sub">
+      {palace.name} · {filled}/{flat.length} placés{due !== null ? ' · révision ' + dueLabel(due) : ''}
+    </p>
+    {#if content.notes}<p class="body-m page-sub notes">{content.notes}</p>{/if}
 
     {#if flat.length === 0}
-      <div class="empty card">
-        <div class="big">🚪</div>
-        <p class="muted" style="margin-bottom: 16px">Ce palais n'a pas encore de loci. Ajoute d'abord des endroits au trajet.</p>
-        <button class="btn primary" onclick={() => nav.replace({ name: 'palace', id: palace.id, tab: 'trajet' })}>
-          Aller au trajet
-        </button>
+      <div class="empty">
+        <div class="art"><Icon name="door" size={32} /></div>
+        <p class="title-m" style="color: var(--on)">Ce palais n'a pas encore de loci</p>
+        <p class="body-m" style="margin: 6px 0 20px">Ajoute d'abord des endroits au trajet.</p>
+        <button class="btn filled" onclick={() => nav.replace({ name: 'palace', id: palace.id, tab: 'trajet' })}>Aller au trajet</button>
       </div>
     {:else}
-      <div class="row tools">
-        <button class="btn ghost" onclick={() => ((hide = !hide), (revealed = {}))}>
-          {hide ? '👁 Tout montrer' : '🙈 Cacher'}
+      <div class="px" style="margin-top: 16px">
+        <div class="progress"><span style:width="{(filled / flat.length) * 100}%"></span></div>
+      </div>
+
+      <div class="chips">
+        <button class="chip" disabled={filled === 0} onclick={() => (quizOpen = true)}><Icon name="play" />Tester</button>
+        <button class="chip" onclick={() => nav.go({ name: 'walk', palaceId: palace.id, contentId: content.id })}>
+          <Icon name="walk" />Promenade
         </button>
         <button
-          class="btn ghost"
+          class="chip"
           onclick={() => {
             pasteStart = firstEmpty();
             pasteOpen = true;
-          }}>📋 Coller</button
+          }}><Icon name="list" />Coller une liste</button
         >
-        <span class="grow"></span>
-        <button class="btn ghost" onclick={() => (quizOpen = true)} disabled={filledCount(content, palace) === 0}>▶ Tester</button>
       </div>
 
       {#if hide}
-        <p class="muted small hint">Touche une ligne pour révéler ce qui y est déposé.</p>
+        <p class="body-m onv px" style="margin-top: 12px">Touche une ligne pour révéler ce qui y est déposé.</p>
       {/if}
 
-      <div class="card list">
-        {#each flat as f, i (f.locus.id)}
-          {@const item = content.items[f.locus.id]}
-          {#if showRooms && (i === 0 || flat[i - 1]?.room.id !== f.room.id)}
-            <div class="room">{f.room.name || 'Pièce sans nom'}</div>
-          {/if}
-          <button class="item" onclick={() => tapRow(i, f.locus.id)}>
-            <span class="badge">{f.n}</span>
-            <span class="grow text">
-              <span class="muted small ellipsis">{f.locus.name}</span>
-              {#if item?.text}
-                {#if hide && !revealed[f.locus.id]}
-                  <span class="hidden">• • •</span>
-                {:else}
-                  <span class="value">{item.text}</span>
-                  {#if item.image}<span class="image small">🖼️ {item.image}</span>{/if}
-                {/if}
+      {#each flat as f, i (f.locus.id)}
+        {@const item = content.items[f.locus.id]}
+        {@const newRoom = i === 0 || flat[i - 1]?.room.id !== f.room.id}
+        {#if showRooms && newRoom}
+          <h2 class="subheader">{f.room.name || 'Pièce sans nom'}</h2>
+        {:else if i > 0}
+          <div class="divider"></div>
+        {:else}
+          <div style="height: 8px"></div>
+        {/if}
+        <button class="list-item two" onclick={() => tapRow(i, f.locus.id)}>
+          <span class="num" class:dashed={!item?.text}>{f.n}</span>
+          <span class="li-text">
+            <span class="li-over ellipsis">{f.locus.name}</span>
+            {#if item?.text}
+              {#if hide && !revealed[f.locus.id]}
+                <span class="masked"></span>
               {:else}
-                <span class="muted empty-slot">Vide — touche pour ajouter</span>
+                <span class="value">{item.text}</span>
+                {#if item.image}<span class="li-sup">{item.image}</span>{/if}
               {/if}
-            </span>
-          </button>
-        {/each}
-      </div>
+            {:else}
+              <span class="li-sup">Toucher pour ajouter</span>
+            {/if}
+          </span>
+        </button>
+      {/each}
     {/if}
   </div>
 
   <!-- Élément -->
-  <Sheet bind:open={editOpen} title={editing ? `n° ${editing.n} · ${editing.locus.name}` : ''} onclose={commit}>
+  <Sheet bind:open={editOpen} title={editing ? `${editing.n}. ${editing.locus.name}` : ''} onclose={commit}>
     {#if editing}
       {#if editing.locus.description}
-        <p class="muted small" style="margin-bottom: 12px">📍 {editing.locus.description}</p>
+        <p class="body-m onv" style="margin: -4px 0 16px">{editing.locus.description}</p>
       {/if}
-      <label class="field">
+      <label class="tf">
         <span>À retenir</span>
-        <textarea class="input" bind:value={draftText} placeholder="Ex : Lait" rows="2"></textarea>
+        <textarea bind:value={draftText} rows="1" placeholder="Ex. Hydrogène"></textarea>
       </label>
-      <label class="field">
+      <label class="tf">
         <span>Image mentale (facultatif)</span>
-        <textarea class="input" bind:value={draftImage} placeholder="Ex : une vache défonce la porte" rows="2"></textarea>
+        <textarea bind:value={draftImage} rows="2" placeholder="Ex. un dirigeable explose contre la porte"></textarea>
       </label>
+      <p class="helper">Fais interagir l'élément avec le lieu : mouvement, son, exagération.</p>
     {/if}
     {#snippet footer()}
-      <button class="btn" disabled={editIndex <= 0} onclick={() => go(-1)} aria-label="Précédent">←</button>
-      <button class="btn primary grow" onclick={() => go(1)}>
-        {editIndex >= flat.length - 1 ? 'Terminer' : 'Suivant →'}
+      <button class="btn outlined has-icon" disabled={editIndex <= 0} onclick={() => go(-1)}>
+        <Icon name="back" size={18} />Préc.
+      </button>
+      <span class="grow"></span>
+      <button class="btn filled" onclick={() => go(1)}>
+        {editIndex >= flat.length - 1 ? 'Terminer' : 'Suivant'}
       </button>
     {/snippet}
   </Sheet>
 
   <!-- Coller une liste -->
   <Sheet bind:open={pasteOpen} title="Coller une liste">
-    <p class="muted small" style="margin-bottom: 12px">
-      Une ligne = un élément. Chaque ligne est placée sur le locus suivant. Les numéros au début des lignes (« 1. », « 2) »)
-      sont retirés.
+    <p class="body-m onv" style="margin-bottom: 16px">
+      Une ligne = un élément, placé sur le locus suivant. Les numéros en début de ligne sont retirés.
     </p>
-    <label class="field">
+    <label class="tf">
       <span>Liste</span>
-      <textarea class="input" bind:value={pasteText} rows="7" placeholder={'Lait\nBananes\nŒufs'}></textarea>
+      <textarea bind:value={pasteText} rows="6" placeholder={'Hydrogène\nHélium\nLithium'}></textarea>
     </label>
-    <label class="field">
-      <span>Commencer au locus n°</span>
-      <input class="input" type="number" min="1" max={flat.length} bind:value={pasteStart} />
+    <label class="tf">
+      <span>Commencer au locus</span>
+      <input type="number" min="1" max={flat.length} bind:value={pasteStart} />
     </label>
     {#if pasteLines.length > 0}
-      <p class="small muted">
+      <p class="body-m onv">
         {pasteLines.length} ligne(s) → loci {pasteStart} à {pasteStart + pasteLines.length - 1}
-        {#if pasteStart + pasteLines.length - 1 > flat.length}
-          <br /><b style="color: var(--bad)">Il manque {pasteStart + pasteLines.length - 1 - flat.length} loci dans ce palais.</b>
-        {/if}
       </p>
+      {#if pasteStart + pasteLines.length - 1 > flat.length}
+        <p class="body-m" style="color: var(--error)">
+          Il manque {pasteStart + pasteLines.length - 1 - flat.length} loci dans ce palais.
+        </p>
+      {/if}
     {/if}
     {#snippet footer()}
-      <button class="btn primary grow" disabled={pasteLines.length === 0} onclick={doPaste}>Placer</button>
+      <button class="btn text" onclick={() => (pasteOpen = false)}>Annuler</button>
+      <button class="btn filled" disabled={pasteLines.length === 0} onclick={doPaste}>Placer</button>
     {/snippet}
   </Sheet>
 
   <!-- Infos -->
   <Sheet bind:open={editInfo} title="Modifier le contenu" onclose={() => touch(content)}>
-    <label class="field">
+    <label class="tf">
       <span>Titre</span>
-      <input class="input" bind:value={content.title} />
+      <input bind:value={content.title} />
     </label>
-    <label class="field">
+    <label class="tf">
       <span>Notes (facultatif)</span>
-      <textarea class="input" bind:value={content.notes} placeholder="Ex : source, contexte, date d'apprentissage…"></textarea>
+      <textarea bind:value={content.notes} rows="2" placeholder="Source, contexte, date d'apprentissage…"></textarea>
     </label>
     {#snippet footer()}
-      <button class="btn danger" onclick={() => (confirmDelete = true)}>Supprimer</button>
-      <button class="btn primary grow" onclick={() => (editInfo = false)}>OK</button>
+      <button
+        class="btn text danger-text"
+        onclick={() => {
+          editInfo = false;
+          const cid = content.id;
+          nav.back();
+          withUndo('Contenu supprimé', () => deleteContent(cid));
+        }}>Supprimer</button
+      >
+      <span class="grow"></span>
+      <button class="btn filled" onclick={() => (editInfo = false)}>OK</button>
     {/snippet}
   </Sheet>
-
-  <Confirm
-    bind:open={confirmDelete}
-    title="Supprimer ce contenu ?"
-    message={`« ${content.title} » sera retiré du palais. Le trajet (les loci) ne change pas.`}
-    onconfirm={() => {
-      editInfo = false;
-      deleteContent(content.id);
-      nav.back();
-    }}
-  />
 
   <QuizStart
     bind:open={quizOpen}
     kind="content"
     id={content.id}
-    explain="On te montre le locus, tu essaies de retrouver ce que tu y as déposé, puis tu révèles la réponse."
+    explain="On te montre le locus, tu retrouves ce que tu y as déposé, puis tu révèles la réponse."
   />
 {/if}
 
 <style>
   .notes {
-    margin: 0 4px 8px;
-  }
-
-  .tools {
-    margin: 4px 0 8px;
-    gap: 0;
-    flex-wrap: wrap;
-  }
-
-  .tools .btn {
-    padding: 0 12px;
-  }
-
-  .hint {
-    margin: 0 4px 8px;
-  }
-
-  .list {
-    overflow: hidden;
-  }
-
-  .room {
-    padding: 10px 14px 6px;
-    font-size: 0.8rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--muted);
-    background: var(--surface-2);
-  }
-
-  .item {
-    display: flex;
-    align-items: flex-start;
-    gap: 12px;
-    padding: 12px;
-    width: 100%;
-    text-align: left;
-    border-bottom: 1px solid var(--border);
-  }
-
-  .item:active {
-    background: var(--surface-2);
-  }
-
-  .text {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    min-width: 0;
+    margin-top: 8px;
   }
 
   .value {
-    font-weight: 600;
-    font-size: 1.05rem;
+    font-size: 18px;
+    line-height: 26px;
+    font-weight: 500;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
   }
 
-  .image {
-    font-style: italic;
-    color: var(--muted);
-    white-space: pre-wrap;
-  }
-
-  .hidden {
-    color: var(--accent);
-    font-weight: 700;
-    letter-spacing: 0.2em;
-  }
-
-  .empty-slot {
-    font-style: italic;
+  .masked {
+    display: block;
+    height: 18px;
+    width: 55%;
+    margin: 4px 0;
+    border-radius: 9px;
+    background: var(--surface-highest);
   }
 </style>

@@ -8,12 +8,20 @@ export type Route =
   | { name: 'settings' }
   | { name: 'palace'; id: string; tab?: 'trajet' | 'contents' }
   | { name: 'content'; id: string }
-  | { name: 'quiz'; kind: QuizKind; id?: string; order: QuizOrder };
+  | { name: 'quiz'; kind: QuizKind; id?: string; order: QuizOrder }
+  | { name: 'walk'; palaceId: string; contentId?: string };
 
 export type Tab = 'home' | 'search' | 'numbers' | 'settings';
 
+/** Sens de la dernière navigation, pour l'animation de transition. */
+export type NavDir = 'forward' | 'back' | 'tab';
+
 class Nav {
   stack: Route[] = $state([{ name: 'home' }]);
+  dir: NavDir = $state('tab');
+  /** Incrémenté à chaque changement d'écran (clé de transition). */
+  version = $state(0);
+  private scrolls: number[] = [];
 
   get current(): Route {
     return this.stack[this.stack.length - 1]!;
@@ -24,17 +32,30 @@ class Nav {
   }
 
   go(route: Route) {
+    this.scrolls.push(window.scrollY);
     this.stack.push(route);
+    this.dir = 'forward';
+    this.version++;
     window.scrollTo(0, 0);
   }
 
   /** Remplace l'écran courant (ex. après une suppression). */
   replace(route: Route) {
     this.stack[this.stack.length - 1] = route;
+    this.dir = 'forward';
+    this.version++;
+    window.scrollTo(0, 0);
   }
 
   switchTab(tab: Tab) {
+    if (this.stack.length === 1 && this.tab === tab) {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+    this.scrolls = [];
     this.stack = [{ name: tab }];
+    this.dir = 'tab';
+    this.version++;
     window.scrollTo(0, 0);
   }
 
@@ -42,6 +63,10 @@ class Nav {
   back(): boolean {
     if (this.stack.length > 1) {
       this.stack.pop();
+      this.dir = 'back';
+      this.version++;
+      const y = this.scrolls.pop() ?? 0;
+      requestAnimationFrame(() => window.scrollTo(0, y));
       return true;
     }
     if (this.tab !== 'home') {

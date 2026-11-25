@@ -5,6 +5,7 @@ import App from './App.svelte';
 import { load, db } from './lib/store.svelte';
 import { handleBack } from './lib/nav.svelte';
 import { checkForUpdate } from './lib/update';
+import { autoBackup } from './lib/backup';
 import { app } from './lib/app.svelte';
 import { isNative } from './lib/util';
 
@@ -17,6 +18,9 @@ async function start() {
     CapApp.addListener('backButton', () => {
       if (!handleBack()) CapApp.exitApp();
     });
+    // Sauvegarde auto quand l'app passe en arrière-plan (et au démarrage).
+    CapApp.addListener('pause', () => void autoBackup());
+    setTimeout(() => void autoBackup(), 3000);
   }
 
   // Vérifie les mises à jour au plus une fois par jour, en silence.

@@ -31,3 +31,51 @@ export async function exportBackup(): Promise<void> {
   }
   db.settings.lastExportAt = Date.now();
 }
+
+const AUTO_DIR = 'Logidex';
+const KEEP = 7;
+
+function dayKey(ts: number): string {
+  const d = new Date(ts);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+/**
+ * Sauvegarde automatique (une fois par jour) dans Documents/Logidex sur le téléphone.
+ * Ces fichiers survivent à une désinstallation de l'app. On garde les 7 derniers.
+ */
+export async function autoBackup(force = false): Promise<void> {
+  if (!isNative() || db.palaces.length === 0) return;
+  const today = dayKey(Date.now());
+  if (!force && db.settings.lastAutoBackupAt && dayKey(db.settings.lastAutoBackupAt) === today && !db.settings.autoBackupError) {
+    return;
+  }
+  try {
+    const perm = await Filesystem.checkPermissions();
+    if (perm.publicStorage !== 'granted') {
+      const req = await Filesystem.requestPermissions();
+      if (req.publicStorage !== 'granted') throw new Error('permission refusée');
+    }
+    await Filesystem.writeFile({
+      path: `${AUTO_DIR}/logidex-auto-${today}.json`,
+      directory: Directory.Documents,
+      data: JSON.stringify(db),
+      encoding: Encoding.UTF8,
+      recursive: true,
+    });
+    db.settings.lastAutoBackupAt = Date.now();
+    db.settings.autoBackupError = undefined;
+    // Ménage : on ne garde que les plus récentes.
+    const { files } = await Filesystem.readdir({ path: AUTO_DIR, directory: Directory.Documents });
+    const autos = files
+      .map((f) => f.name)
+      .filter((n) => n.startsWith('logidex-auto-'))
+      .sort();
+    for (const name of autos.slice(0, Math.max(0, autos.length - KEEP))) {
+      await Filesystem.deleteFile({ path: `${AUTO_DIR}/${name}`, directory: Directory.Documents }).catch(() => {});
+    }
+  } catch (e) {
+    db.settings.autoBackupError = (e as Error).message || 'erreur inconnue';
+  }
+}

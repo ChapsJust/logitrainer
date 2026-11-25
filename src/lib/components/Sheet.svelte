@@ -12,6 +12,10 @@
 
   let { open = $bindable(), title = '', onclose, children, footer }: Props = $props();
 
+  let dragY = $state(0);
+  let startY = 0;
+  let dragging = $state(false);
+
   function close() {
     open = false;
     onclose?.();
@@ -26,18 +30,37 @@
       document.body.style.overflow = '';
     };
   });
+
+  // Glisser la poignée vers le bas pour fermer.
+  function down(e: PointerEvent) {
+    dragging = true;
+    startY = e.clientY;
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  }
+  function moveHandle(e: PointerEvent) {
+    if (dragging) dragY = Math.max(0, e.clientY - startY);
+  }
+  function up() {
+    dragging = false;
+    if (dragY > 90) close();
+    dragY = 0;
+  }
 </script>
 
 {#if open}
-  <div class="backdrop" role="presentation" onclick={close}></div>
-  <div class="sheet" role="dialog" aria-modal="true" aria-label={title}>
-    <div class="handle"></div>
-    {#if title}
-      <div class="head">
-        <h2>{title}</h2>
-        <button class="icon-btn" onclick={close} aria-label="Fermer">✕</button>
-      </div>
-    {/if}
+  <div class="scrim" role="presentation" onclick={close}></div>
+  <div
+    class="sheet"
+    class:dragging
+    role="dialog"
+    aria-modal="true"
+    aria-label={title}
+    style:transform={dragY ? `translateY(${dragY}px)` : undefined}
+  >
+    <div class="handle-zone" role="presentation" onpointerdown={down} onpointermove={moveHandle} onpointerup={up} onpointercancel={up}>
+      <div class="handle"></div>
+      {#if title}<h2 class="title-l">{title}</h2>{/if}
+    </div>
     <div class="body">
       {@render children()}
     </div>
@@ -48,12 +71,12 @@
 {/if}
 
 <style>
-  .backdrop {
+  .scrim {
     position: fixed;
     inset: 0;
-    background: rgb(0 0 0 / 0.45);
+    background: var(--scrim);
     z-index: 50;
-    animation: fade 0.15s ease-out;
+    animation: fade 0.2s var(--ease);
   }
 
   .sheet {
@@ -64,47 +87,46 @@
     max-height: 92dvh;
     display: flex;
     flex-direction: column;
-    background: var(--surface);
-    border-radius: 22px 22px 0 0;
+    background: var(--surface-low);
+    border-radius: 28px 28px 0 0;
     z-index: 51;
     padding-bottom: var(--safe-bottom);
-    animation: up 0.2s cubic-bezier(0.2, 0.9, 0.3, 1);
-    max-width: 720px;
+    animation: up 0.32s var(--ease);
+    max-width: 640px;
     margin: 0 auto;
+    transition: transform 0.2s var(--ease);
+  }
+
+  .sheet.dragging {
+    transition: none;
+  }
+
+  .handle-zone {
+    padding: 0 24px 4px;
+    touch-action: none;
+    flex-shrink: 0;
   }
 
   .handle {
-    width: 40px;
-    height: 5px;
-    border-radius: 3px;
-    background: var(--border);
-    margin: 8px auto 0;
-    flex-shrink: 0;
-  }
-
-  .head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 6px 8px 0 20px;
-    flex-shrink: 0;
-  }
-
-  .head h2 {
-    font-size: 1.15rem;
+    width: 32px;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--onv);
+    opacity: 0.4;
+    margin: 22px auto 18px;
   }
 
   .body {
-    padding: 12px 20px 16px;
+    padding: 12px 24px 16px;
     overflow-y: auto;
     overscroll-behavior: contain;
   }
 
   .foot {
-    padding: 10px 20px 14px;
-    border-top: 1px solid var(--border);
+    padding: 8px 24px 16px;
     display: flex;
-    gap: 10px;
+    gap: 8px;
+    justify-content: flex-end;
     flex-shrink: 0;
   }
 

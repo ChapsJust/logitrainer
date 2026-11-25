@@ -12,6 +12,14 @@ export interface Room {
   loci: Locus[];
 }
 
+/** État de révision espacée. */
+export interface Review {
+  /** Intervalle actuel en jours. */
+  interval: number;
+  /** Prochaine révision (timestamp, début de journée). */
+  due: number;
+}
+
 export interface QuizResult {
   at: number;
   score: number;
@@ -28,6 +36,7 @@ export interface Palace {
   createdAt: number;
   updatedAt: number;
   lastQuiz?: QuizResult;
+  review?: Review;
 }
 
 /** Ce qui est déposé sur un locus pour un contenu donné. */
@@ -49,6 +58,7 @@ export interface Content {
   createdAt: number;
   updatedAt: number;
   lastQuiz?: QuizResult;
+  review?: Review;
 }
 
 export type Theme = 'auto' | 'light' | 'dark';
@@ -57,6 +67,9 @@ export interface Settings {
   theme: Theme;
   lastExportAt?: number;
   lastUpdateCheckAt?: number;
+  lastAutoBackupAt?: number;
+  autoBackupError?: string;
+  onboarded?: boolean;
 }
 
 export interface Data {

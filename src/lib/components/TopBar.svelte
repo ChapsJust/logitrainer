@@ -1,52 +1,74 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
   import { nav } from '../nav.svelte';
+  import Icon, { type IconName } from './Icon.svelte';
 
   interface Props {
-    title: string;
-    subtitle?: string;
+    /** Titre affiché dans la barre (petite barre). Laisser vide si la page affiche un grand titre. */
+    title?: string;
     back?: boolean;
+    /** Icône de gauche (par défaut : flèche retour). */
+    navIcon?: IconName;
+    onnav?: () => void;
     actions?: Snippet;
   }
 
-  let { title, subtitle = '', back = false, actions }: Props = $props();
+  let { title = '', back = false, navIcon = 'back', onnav, actions }: Props = $props();
+
+  let scrolled = $state(false);
+  $effect(() => {
+    const on = () => (scrolled = window.scrollY > 4);
+    on();
+    window.addEventListener('scroll', on, { passive: true });
+    return () => window.removeEventListener('scroll', on);
+  });
 </script>
 
-<header class="top">
-  {#if back}
-    <button class="icon-btn" onclick={() => nav.back()} aria-label="Retour">
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6" /></svg>
-    </button>
-  {/if}
-  <div class="titles grow" class:pad={!back}>
-    <h1 class="ellipsis">{title}</h1>
-    {#if subtitle}<p class="muted small ellipsis">{subtitle}</p>{/if}
+<header class:scrolled>
+  <div class="inner">
+    {#if back}
+      <button class="icon-btn nav" onclick={() => (onnav ? onnav() : nav.back())} aria-label="Retour">
+        <Icon name={navIcon} />
+      </button>
+    {/if}
+    <span class="title title-l ellipsis grow" class:pad={!back}>{title}</span>
+    {#if actions}{@render actions()}{/if}
   </div>
-  {#if actions}{@render actions()}{/if}
 </header>
 
 <style>
-  .top {
+  header {
     position: sticky;
     top: 0;
     z-index: 30;
+    background: var(--surface);
+    padding-top: var(--safe-top);
+    transition: background 0.2s;
+  }
+
+  header.scrolled {
+    background: var(--surface-c);
+  }
+
+  .inner {
+    height: 64px;
     display: flex;
     align-items: center;
-    gap: 4px;
-    padding: calc(var(--safe-top) + 8px) 8px 8px;
-    background: color-mix(in srgb, var(--bg) 88%, transparent);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
+    gap: 0;
+    padding: 0 4px;
     max-width: 720px;
     margin: 0 auto;
   }
 
-  .titles.pad {
-    padding-left: 10px;
+  .nav {
+    color: var(--on);
   }
 
-  h1 {
-    font-size: 1.35rem;
-    font-weight: 800;
+  .title {
+    padding-left: 4px;
+  }
+
+  .title.pad {
+    padding-left: 12px;
   }
 </style>

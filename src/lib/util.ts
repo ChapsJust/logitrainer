@@ -75,3 +75,23 @@ export function isNative(): boolean {
   const cap = (globalThis as { Capacitor?: { isNativePlatform?: () => boolean } }).Capacitor;
   return !!cap?.isNativePlatform?.();
 }
+
+const SMALL = new Set(['de', 'du', 'des', 'la', 'le', 'les', 'mon', 'ma', 'mes', 'un', 'une', 'au', 'aux', 'et', 'à', 'en', 'vers', 'chez']);
+
+/** Initiales d'un nom de palais (« Maison de mes parents » → « MP »). */
+export function initials(name: string): string {
+  const words = name
+    .replace(/[^\p{L}\p{N}\s'-]/gu, ' ')
+    .split(/[\s'-]+/)
+    .filter((w) => w && !SMALL.has(w.toLowerCase()));
+  if (words.length === 0) return '?';
+  if (words.length === 1) return words[0]!.slice(0, 2).toUpperCase();
+  return (words[0]![0]! + words[1]![0]!).toUpperCase();
+}
+
+/** Couleur d'avatar stable (1 à 4) dérivée de l'id. */
+export function avatarTone(id: string): number {
+  let h = 0;
+  for (const c of id) h = (h * 31 + c.charCodeAt(0)) | 0;
+  return (Math.abs(h) % 4) + 1;
+}

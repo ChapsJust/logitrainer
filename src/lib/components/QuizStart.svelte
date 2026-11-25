@@ -1,5 +1,6 @@
 <script lang="ts">
   import Sheet from './Sheet.svelte';
+  import Icon, { type IconName } from './Icon.svelte';
   import { nav, type QuizKind, type QuizOrder } from '../nav.svelte';
 
   interface Props {
@@ -11,10 +12,10 @@
 
   let { open = $bindable(), kind, id, explain }: Props = $props();
 
-  const orders: { id: QuizOrder; label: string; desc: string }[] = [
-    { id: 'forward', label: "Dans l'ordre", desc: 'Du début à la fin, comme une promenade.' },
-    { id: 'backward', label: 'À rebours', desc: 'De la fin au début. Plus dur !' },
-    { id: 'random', label: 'Au hasard', desc: 'Positions mélangées : vérifie que tu connais chaque numéro.' },
+  const orders: { id: QuizOrder; label: string; desc: string; icon: IconName }[] = [
+    { id: 'forward', label: "Dans l'ordre", desc: 'Du début à la fin, comme une promenade', icon: 'forward' },
+    { id: 'backward', label: 'À rebours', desc: 'De la fin au début, plus exigeant', icon: 'rewind' },
+    { id: 'random', label: 'Au hasard', desc: 'Vérifie que tu connais chaque position', icon: 'shuffle' },
   ];
 
   function start(order: QuizOrder) {
@@ -24,30 +25,28 @@
 </script>
 
 <Sheet bind:open title="Tester">
-  <p class="muted" style="margin-bottom: 14px">{explain}</p>
-  <div class="stack">
+  <p class="body-m onv" style="margin-bottom: 8px">{explain}</p>
+  <div class="list">
     {#each orders as o (o.id)}
-      <button class="card choice" onclick={() => start(o.id)}>
-        <b>{o.label}</b>
-        <span class="muted small">{o.desc}</span>
+      <button class="list-item two" onclick={() => start(o.id)}>
+        <span class="num"><Icon name={o.icon} size={20} /></span>
+        <span class="li-text">
+          <span class="li-head">{o.label}</span>
+          <span class="li-sup">{o.desc}</span>
+        </span>
+        <Icon name="next" size={20} class="onv" />
       </button>
     {/each}
   </div>
 </Sheet>
 
 <style>
-  .choice {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 2px;
-    padding: 14px 16px;
-    text-align: left;
-    width: 100%;
-    box-shadow: none;
+  .list {
+    margin: 0 -24px;
   }
 
-  .choice:active {
-    background: var(--surface-2);
+  .list .list-item {
+    padding-left: 24px;
+    padding-right: 24px;
   }
 </style>

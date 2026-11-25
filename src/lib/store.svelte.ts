@@ -1,6 +1,7 @@
 import type { Content, ContentItem, Data, Locus, Palace, QuizResult, Room } from './types';
 import { readRaw, writeRaw, writeStartupBackup } from './storage';
 import { flatLoci, move, uid } from './util';
+import { nextReview, snooze } from './review';
 
 function emptyData(): Data {
   return { schema: 1, palaces: [], contents: [], numbers: {}, settings: { theme: 'auto' } };
@@ -28,6 +29,7 @@ export function parseData(json: string): Data {
       createdAt: p.createdAt ?? Date.now(),
       updatedAt: p.updatedAt ?? Date.now(),
       lastQuiz: p.lastQuiz,
+      review: p.review,
       rooms: (p.rooms ?? []).map((r) => ({
         id: r.id ?? uid(),
         name: r.name ?? '',
@@ -43,6 +45,7 @@ export function parseData(json: string): Data {
       createdAt: c.createdAt ?? Date.now(),
       updatedAt: c.updatedAt ?? Date.now(),
       lastQuiz: c.lastQuiz,
+      review: c.review,
     })),
     numbers: raw.numbers ?? {},
     settings: { ...base.settings, ...(raw.settings ?? {}) },
@@ -87,6 +90,15 @@ export async function load(): Promise<void> {
 }
 
 export function importData(json: string): void {
+  replaceAll(parseData(json));
+}
+
+/** Copie de l'état complet, pour « Annuler ». */
+export function snapshot(): string {
+  return JSON.stringify(db);
+}
+
+export function restore(json: string): void {
   replaceAll(parseData(json));
 }
 
@@ -261,6 +273,31 @@ export function pasteList(c: Content, p: Palace, lines: string[], start: number)
 
 export function recordQuiz(target: Palace | Content, result: QuizResult): void {
   target.lastQuiz = result;
+  target.review = nextReview(target.review, result.score, result.total, result.at);
+}
+
+export function snoozeReview(target: Palace | Content): void {
+  target.review = snooze(target.review);
+}
+
+/** Déplace un locus dans `roomId`, à la position `index` (calculée sans le locus lui-même). */
+export function moveLocusTo(p: Palace, locusId: string, roomId: string, index: number): void {
+  const from = p.rooms.find((r) => r.loci.some((l) => l.id === locusId));
+  const to = p.rooms.find((r) => r.id === roomId);
+  if (!from || !to) return;
+  const i = from.loci.findIndex((l) => l.id === locusId);
+  const [locus] = from.loci.splice(i, 1);
+  if (!locus) return;
+  to.loci.splice(Math.max(0, Math.min(index, to.loci.length)), 0, locus);
+  touch(p);
+}
+
+/** Crée un palais avec une liste de loci (onboarding). */
+export function createPalaceWithLoci(name: string, loci: string[]): Palace {
+  const p = createPalace(name, '');
+  const room = p.rooms[0]!;
+  for (const l of loci) addLocus(p, room, l);
+  return p;
 }
 
 /* ---------- Exemple ---------- */
