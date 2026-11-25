@@ -452,6 +452,7 @@
         let inputIndex = 0;
         let best = 0;
         let playId = 0;
+        let canRetry = false;
 
         try {
           best = Number(localStorage.getItem("logitrainer-best")) || 0;
@@ -509,6 +510,7 @@
 
         function startRound() {
           playId += 1;
+          canRetry = false;
           sequence = makeSequence(level);
           inputIndex = 0;
           lengthValue.textContent = String(sequence.length);
@@ -518,6 +520,7 @@
         }
 
         function startGame() {
+          canRetry = false;
           initialLength = Number(difficultyButtons.find((button) => button.getAttribute("aria-pressed") === "true").dataset.length);
           level = initialLength;
           startButton.textContent = "Rejouer la séquence ↻";
@@ -531,6 +534,7 @@
           window.setTimeout(() => palet.classList.remove("is-lit"), 180);
 
           if (sequence[inputIndex] !== index) {
+            canRetry = true;
             setGameState("ready");
             setStatus("Oups, ce n’était pas le bon palet. Réessayez cette séquence.", "error");
             startButton.textContent = "Réessayer";
@@ -566,10 +570,18 @@
           startRound();
         }
 
-        startButton.addEventListener("click", startGame);
+        startButton.addEventListener("click", () => {
+          if (canRetry) {
+            canRetry = false;
+            showSequence(playId);
+            return;
+          }
+          startGame();
+        });
         difficultyButtons.forEach((button) => {
           button.addEventListener("click", () => {
             if (state === "showing" || state === "input") return;
+            canRetry = false;
             initialLength = Number(button.dataset.length);
             difficultyButtons.forEach((choice) => choice.setAttribute("aria-pressed", String(choice === button)));
             levelValue.textContent = "—";
