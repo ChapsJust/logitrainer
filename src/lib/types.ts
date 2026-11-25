@@ -81,7 +81,7 @@ export interface Settings {
 }
 
 export interface Data {
-  schema: 1;
+  schema: number;
   palaces: Palace[];
   contents: Content[];
   /** Système de nombres : clé « 00 » à « 99 » → image. */

@@ -11,14 +11,17 @@
   import Onboarding from './lib/screens/Onboarding.svelte';
   import { nav } from './lib/nav.svelte';
   import { db, status } from './lib/store.svelte';
-  import { app, dismissSnack } from './lib/app.svelte';
+  import { app, dismissSnack, toast } from './lib/app.svelte';
   import { applyTheme, onSystemThemeChange } from './lib/theme';
 
   const route = $derived(nav.current);
   const showNav = $derived(nav.stack.length === 1);
-  const onboarding = $derived(db.palaces.length === 0 && !db.settings.onboarded);
+  const onboarding = $derived(db.palaces.length === 0 && !db.settings.onboarded && !status.readOnly);
 
   $effect(() => applyTheme(db.settings.theme));
+  $effect(() => {
+    if (status.loaded && status.notice) toast(status.notice, undefined, 8000);
+  });
   onSystemThemeChange(() => applyTheme(db.settings.theme));
 </script>
 
