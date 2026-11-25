@@ -94,6 +94,8 @@ export interface Settings {
   reminderAsked?: boolean;
   /** Lieux repliés sur l'accueil. */
   collapsedPlaces?: string[];
+  /** Palais pour lesquels on a répondu « c'est un seul trajet » à la proposition de les transformer en lieu. */
+  keepAsPalace?: string[];
 }
 
 export interface Data {

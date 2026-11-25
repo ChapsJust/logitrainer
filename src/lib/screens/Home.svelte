@@ -3,7 +3,7 @@
   import PalaceRow from '../components/PalaceRow.svelte';
   import PlaceIconView from '../components/PlaceIconView.svelte';
   import NewPalaceSheet from '../components/NewPalaceSheet.svelte';
-  import { createSample, db, getPalace, palacesOf, snoozeReview } from '../store.svelte';
+  import { createSample, db, getPalace, palacesOf, snoozeReview, splitCandidates } from '../store.svelte';
   import { nav, type Route } from '../nav.svelte';
   import { lociCount, plural } from '../util';
   import { app, toast } from '../app.svelte';
@@ -25,6 +25,7 @@
 
   const palaces = $derived([...db.palaces].sort((a, b) => b.updatedAt - a.updatedAt));
   const loose = $derived(palacesOf(undefined));
+  const toSplit = $derived(splitCandidates());
   const collapsed = $derived(new Set(db.settings.collapsedPlaces ?? []));
 
   function toggle(id: string) {
@@ -100,6 +101,20 @@
         <span class="title-m">Version {app.update.version} disponible</span>
         <span class="body-m onv">Touche pour l'installer</span>
       </span>
+    </button>
+  {/if}
+
+  {#if toSplit.length && toSplit[0]}
+    {@const c = toSplit[0]}
+    <button class="banner card-outlined" onclick={() => nav.go({ name: 'palace', id: c.id })}>
+      <Icon name="building" class="primary" />
+      <span class="grow">
+        <span class="title-m">« {c.name} » a {c.rooms.filter((r) => r.name).length} zones</span>
+        <span class="body-m onv">
+          En faire un lieu avec un palais par zone ?{toSplit.length > 1 ? ` (et ${toSplit.length - 1} autre${toSplit.length > 2 ? 's' : ''})` : ''}
+        </span>
+      </span>
+      <Icon name="next" size={20} class="onv" />
     </button>
   {/if}
 
