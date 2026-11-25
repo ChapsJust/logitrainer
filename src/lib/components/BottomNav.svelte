@@ -7,6 +7,7 @@
     { id: 'home', label: 'Palais', icon: 'home' },
     { id: 'search', label: 'Recherche', icon: 'search' },
     { id: 'numbers', label: 'Nombres', icon: 'hash' },
+    { id: 'lab', label: 'Labo', icon: 'flask' },
     { id: 'settings', label: 'Réglages', icon: 'settings' },
   ];
 </script>

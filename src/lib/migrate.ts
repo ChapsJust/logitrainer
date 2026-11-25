@@ -11,7 +11,7 @@
 import type { Data } from './types';
 import { uid } from './util';
 
-export const CURRENT_SCHEMA = 2;
+export const CURRENT_SCHEMA = 3;
 
 type Raw = Record<string, unknown> & { schema?: number };
 
@@ -19,6 +19,8 @@ type Raw = Record<string, unknown> & { schema?: number };
 const MIGRATIONS: Record<number, (d: Raw) => Raw> = {
   // 1 → 2 (v0.4) : ajout des lieux. Les palais existants restent tels quels, sans lieu.
   1: (d) => ({ ...d, places: Array.isArray(d.places) ? d.places : [] }),
+  // 2 → 3 (v0.5) : historique, points faibles, éléments multiples, Laboratoire. Tout est facultatif.
+  2: (d) => ({ ...d, lab: d.lab && typeof d.lab === 'object' ? d.lab : { sessions: [] } }),
 };
 
 const PLACE_ICONS = ['home', 'building', 'briefcase', 'tree', 'map', 'star'];
@@ -104,10 +106,17 @@ export function parseData(json: string): { data: Data; from: number } {
 
   const contents = arr(raw.contents).map((cv) => {
     const c = obj(cv);
-    const items: Record<string, { text: string; image: string }> = {};
+    const items: Record<string, { text: string; image: string; more?: string[]; question?: string }> = {};
     for (const [k, iv] of Object.entries(obj(c.items))) {
       const i = obj(iv);
-      items[k] = { ...i, text: str(i.text), image: str(i.image) };
+      const more = arr(i.more).filter((x): x is string => typeof x === 'string' && x.trim() !== '').slice(0, 3);
+      items[k] = {
+        ...i,
+        text: str(i.text),
+        image: str(i.image),
+        more: more.length ? more : undefined,
+        question: str(i.question) || undefined,
+      };
     }
     return {
       ...c,
@@ -126,8 +135,26 @@ export function parseData(json: string): { data: Data; from: number } {
 
   const settings = { theme: 'auto', ...obj(raw.settings) };
 
+  const labRaw = obj(raw.lab);
+  const lab = {
+    ...labRaw,
+    sessions: arr(labRaw.sessions)
+      .map((v) => obj(v))
+      .filter((v) => typeof v.at === 'number')
+      .map((v) => ({
+        ...v,
+        id: str(v.id) || uid(),
+        palaceId: str(v.palaceId),
+        palaceName: str(v.palaceName),
+        perLocus: num(v.perLocus, 1),
+        words: arr(v.words).filter((w): w is string => typeof w === 'string'),
+        encodeMs: num(v.encodeMs, 0),
+        correct: num(v.correct, 0),
+      })),
+  };
+
   return {
-    data: { ...raw, schema: CURRENT_SCHEMA, places, palaces, contents, numbers, settings } as unknown as Data,
+    data: { ...raw, schema: CURRENT_SCHEMA, places, palaces, contents, numbers, settings, lab } as unknown as Data,
     from,
   };
 }

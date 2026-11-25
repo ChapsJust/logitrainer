@@ -12,6 +12,9 @@
   import Place from './lib/screens/Place.svelte';
   import Fill from './lib/screens/Fill.svelte';
   import NumbersCreate from './lib/screens/NumbersCreate.svelte';
+  import Recall from './lib/screens/Recall.svelte';
+  import Lab from './lib/screens/Lab.svelte';
+  import LabRun from './lib/screens/LabRun.svelte';
   import { nav } from './lib/nav.svelte';
   import { db, status } from './lib/store.svelte';
   import { app, dismissSnack, toast } from './lib/app.svelte';
@@ -54,10 +57,18 @@
           <Content id={route.id} focus={route.focus} />
         {:else if route.name === 'fill'}
           <Fill id={route.id} start={route.start} />
+        {:else if route.name === 'recall'}
+          <Recall kind={route.kind} id={route.id} />
+        {:else if route.name === 'lab'}
+          <Lab />
+        {:else if route.name === 'lab-run'}
+          <LabRun palaceId={route.palaceId} perLocus={route.perLocus} seconds={route.seconds} />
+        {:else if route.name === 'lab-recall'}
+          <LabRun recallOf={route.sessionId} delayed={route.delayed} />
         {:else if route.name === 'numbers-create'}
           <NumbersCreate start={route.start} />
         {:else if route.name === 'quiz'}
-          <Quiz kind={route.kind} id={route.id} order={route.order} />
+          <Quiz kind={route.kind} id={route.id} order={route.order} weakOnly={route.weakOnly} session={route.session} />
         {:else if route.name === 'walk'}
           <Walk palaceId={route.palaceId} contentId={route.contentId} />
         {/if}

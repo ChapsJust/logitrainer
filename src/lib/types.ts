@@ -24,7 +24,14 @@ export interface QuizResult {
   at: number;
   score: number;
   total: number;
+  /** Test fait avant la date de révision : entraînement, ne fait pas avancer l'intervalle. */
+  practice?: boolean;
+  /** Type de test. */
+  mode?: 'quiz' | 'recall';
 }
+
+/** Nombre d'échecs récents par locus (« points faibles »). */
+export type WeakMap = Record<string, number>;
 
 export type PlaceIcon = 'home' | 'building' | 'briefcase' | 'tree' | 'map' | 'star';
 
@@ -51,14 +58,22 @@ export interface Palace {
   updatedAt: number;
   lastQuiz?: QuizResult;
   review?: Review;
+  history?: QuizResult[];
+  weak?: WeakMap;
+  /** Palais réservé au Laboratoire (mots au hasard) : jamais de contenus d'études dessus. */
+  training?: boolean;
 }
 
 /** Ce qui est déposé sur un locus pour un contenu donné. */
 export interface ContentItem {
-  /** L'info à retenir. */
+  /** L'info à retenir (premier élément). */
   text: string;
   /** L'image mentale utilisée (facultatif). */
   image: string;
+  /** Éléments supplémentaires sur le même locus (2 à 4 au total), notés séparément. */
+  more?: string[];
+  /** Question facultative : le test la montre à la place du seul nom du locus. */
+  question?: string;
 }
 
 /** Un contenu (liste, discours, etc.) déposé dans un palais. */
@@ -75,6 +90,23 @@ export interface Content {
   updatedAt: number;
   lastQuiz?: QuizResult;
   review?: Review;
+  history?: QuizResult[];
+  weak?: WeakMap;
+}
+
+/** Une séance du Laboratoire. */
+export interface LabSession {
+  id: string;
+  at: number;
+  palaceId: string;
+  palaceName: string;
+  perLocus: number;
+  /** Mots, dans l'ordre (gardés seulement pour le rappel à 24 h). */
+  words: string[];
+  encodeMs: number;
+  correct: number;
+  /** Rappel différé (24 h). */
+  recall24?: { at: number; correct: number };
 }
 
 export type Theme = 'auto' | 'light' | 'dark';
@@ -106,6 +138,7 @@ export interface Data {
   /** Système de nombres : clé « 00 » à « 99 » → image. */
   numbers: Record<string, string>;
   settings: Settings;
+  lab: { sessions: LabSession[] };
 }
 
 export interface FlatLocus {

@@ -4,7 +4,7 @@
   import PlaceIconView from '../components/PlaceIconView.svelte';
   import NewPalaceSheet from '../components/NewPalaceSheet.svelte';
   import { createSample, db, getPalace, palacesOf, snoozeReview, splitCandidates } from '../store.svelte';
-  import { nav, type Route } from '../nav.svelte';
+  import { nav, sessionRoute, type Route } from '../nav.svelte';
   import { lociCount, plural } from '../util';
   import { app, toast } from '../app.svelte';
   import { contentDue, dueLabel, isDue, palaceDue } from '../review';
@@ -19,6 +19,9 @@
     due: number;
     target: Palace | Content;
     route: Route;
+    /** Clé de session (« c:<id> » / « p:<id> ») et nombre de cartes, pour estimer la durée. */
+    skey: string;
+    cards: number;
   }
 
   let creating = $state(false);
@@ -50,6 +53,8 @@
           due,
           target: c,
           route: { name: 'quiz', kind: 'content', id: c.id, order: 'forward' },
+          skey: `c:${c.id}`,
+          cards: Object.values(c.items).filter((i) => i.text).length,
         });
       }
     }
@@ -63,6 +68,8 @@
           due,
           target: p,
           route: { name: 'quiz', kind: 'trajet', id: p.id, order: 'forward' },
+          skey: `p:${p.id}`,
+          cards: lociCount(p),
         });
       }
     }
@@ -71,6 +78,28 @@
 
   const dueNow = $derived(schedule.filter((d) => isDue(d.due)));
   const upcoming = $derived(schedule.find((d) => !isDue(d.due)));
+
+  /**
+   * Session du jour : on enchaîne les révisions dues, les plus en retard d'abord,
+   * dans la limite d'environ 10 minutes (≈ 12 s par carte). Le reste attend demain.
+   */
+  const SECONDS_PER_CARD = 12;
+  const session = $derived.by(() => {
+    const out: DueItem[] = [];
+    let secs = 0;
+    for (const d of dueNow) {
+      const cost = Math.max(1, d.cards) * SECONDS_PER_CARD;
+      if (out.length && secs + cost > 600) break;
+      out.push(d);
+      secs += cost;
+    }
+    return { items: out, minutes: Math.max(1, Math.round(secs / 60)) };
+  });
+
+  function startSession() {
+    const [first, ...rest] = session.items;
+    if (first) nav.go(sessionRoute(first.skey, rest.map((r) => r.skey)));
+  }
 
   function later() {
     for (const d of dueNow) snoozeReview(d.target);
@@ -143,9 +172,15 @@
       {#if dueNow.length > 4}
         <p class="body-m dim">et {dueNow.length - 4} autre(s)…</p>
       {/if}
+      <p class="body-m dim session-info">
+        Session du jour : {plural(session.items.length, 'révision', 'révisions')} · environ {session.minutes} min{dueNow.length >
+        session.items.length
+          ? ` · ${dueNow.length - session.items.length} pour demain`
+          : ''}
+      </p>
       <div class="row actions">
-        <button class="btn filled has-icon" onclick={() => dueNow[0] && nav.go(dueNow[0].route)}>
-          <Icon name="play" size={18} />Réviser
+        <button class="btn filled has-icon" onclick={startSession}>
+          <Icon name="play" size={18} />{session.items.length > 1 ? 'Tout réviser' : 'Réviser'}
         </button>
         <button class="btn text" onclick={later}>Plus tard</button>
       </div>
@@ -321,6 +356,10 @@
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
+  }
+
+  .session-info {
+    margin-top: 6px;
   }
 
   .actions {

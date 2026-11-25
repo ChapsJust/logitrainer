@@ -15,9 +15,11 @@
     kind: QuizKind;
     id?: string;
     explain: string;
+    /** Nombre de points faibles (propose de ne tester qu'eux). */
+    weak?: number;
   }
 
-  let { open = $bindable(), kind, id, explain }: Props = $props();
+  let { open = $bindable(), kind, id, explain, weak = 0 }: Props = $props();
 
   const orders: { id: QuizOrder; label: string; desc: string; icon: IconName }[] = [
     { id: 'forward', label: "Dans l'ordre", desc: 'Du début à la fin, comme une promenade', icon: 'forward' },
@@ -46,6 +48,26 @@
     </div>
   {/if}
   <div class="list">
+    {#if weak > 0}
+      <button class="list-item two" onclick={() => ((open = false), nav.go({ name: 'quiz', kind, id, order: 'forward', weakOnly: true }))}>
+        <span class="num weak"><Icon name="alert" size={20} /></span>
+        <span class="li-text">
+          <span class="li-head">Points faibles seulement</span>
+          <span class="li-sup">{weak > 1 ? `${weak} loci ratés récemment` : '1 locus raté récemment'}</span>
+        </span>
+        <Icon name="next" size={20} class="onv" />
+      </button>
+    {/if}
+    {#if kind !== 'numbers' && id}
+      <button class="list-item two" onclick={() => ((open = false), nav.go({ name: 'recall', kind: kind === 'content' ? 'content' : 'trajet', id }))}>
+        <span class="num"><Icon name="list" size={20} /></span>
+        <span class="li-text">
+          <span class="li-head">Rappel libre</span>
+          <span class="li-sup">Tout réciter dans l'ordre, sans voir les loci : le vrai test</span>
+        </span>
+        <Icon name="next" size={20} class="onv" />
+      </button>
+    {/if}
     {#each orders as o (o.id)}
       <button class="list-item two" onclick={() => start(o.id)}>
         <span class="num"><Icon name={o.icon} size={20} /></span>
@@ -62,6 +84,11 @@
 <style>
   .list {
     margin: 0 -24px;
+  }
+
+  .num.weak {
+    background: var(--warn-c);
+    color: var(--onwarn-c);
   }
 
   .recite {

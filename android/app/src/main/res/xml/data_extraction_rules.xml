@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android ≥ 12 : mêmes règles pour la sauvegarde cloud et le transfert d'appareil. -->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="sharedpref" path="WSSecureStorageSharedPreferences.xml" />
+        <exclude domain="sharedpref" path="CapacitorStorage.xml" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="sharedpref" path="WSSecureStorageSharedPreferences.xml" />
+        <exclude domain="sharedpref" path="CapacitorStorage.xml" />
+    </device-transfer>
+</data-extraction-rules>

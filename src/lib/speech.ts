@@ -151,3 +151,139 @@ function listenWeb(onPartial: (text: string) => void): Listening {
   rec.start();
   return { stop: () => rec.stop(), done };
 }
+
+/**
+ * Écoute longue : continue même pendant les pauses, jusqu'à `stop()`.
+ * La reconnaissance d'Android s'arrête au premier silence : on la relance aussitôt
+ * en accumulant le texte. `onText` reçoit tout le texte capté jusqu'ici.
+ */
+export function listenLong(onText: (text: string) => void, maxMs = 180_000): Listening {
+  return isNative() ? listenLongNative(onText, maxMs) : listenLongWeb(onText);
+}
+
+function listenLongNative(onText: (text: string) => void, maxMs: number): Listening {
+  let acc = '';
+  let current = '';
+  let stopped = false;
+  let resolveDone: (v: string[]) => void = () => {};
+  const done = new Promise<string[]>((r) => (resolveDone = r));
+  let handle: { remove: () => Promise<void> } | null = null;
+  let poll: ReturnType<typeof setInterval> | undefined;
+  const full = () => `${acc} ${current}`.replace(/\s+/g, ' ').trim();
+
+  const commit = () => {
+    if (current.trim()) acc = `${acc} ${current}`.trim();
+    current = '';
+  };
+
+  const startSegment = async () => {
+    if (stopped) return;
+    try {
+      await SpeechRecognition.start({ language: LANG, maxResults: 3, partialResults: true, popup: false });
+    } catch {
+      // ex. « aucune correspondance » après un long silence : on relance simplement.
+    }
+  };
+
+  const finish = () => {
+    clearInterval(poll);
+    setTimeout(() => {
+      commit();
+      void handle?.remove();
+      resolveDone(acc ? [acc] : []);
+    }, 700);
+  };
+
+  void (async () => {
+    handle = await SpeechRecognition.addListener('partialResults', (d) => {
+      if (d.matches?.[0]) {
+        current = d.matches[0];
+        onText(full());
+      }
+    });
+    await startSegment();
+    let wasListening = false;
+    let idle = 0;
+    poll = setInterval(async () => {
+      if (stopped) return;
+      try {
+        const { listening } = await SpeechRecognition.isListening();
+        if (listening) {
+          wasListening = true;
+          idle = 0;
+        } else if (wasListening || ++idle > 4) {
+          // Fin d'un segment (pause) : on garde le texte et on relance l'écoute.
+          wasListening = false;
+          idle = 0;
+          commit();
+          onText(full());
+          await startSegment();
+        }
+      } catch {
+        /* on réessaie au prochain tour */
+      }
+    }, 350);
+    setTimeout(() => {
+      if (!stopped) {
+        stopped = true;
+        void SpeechRecognition.stop().catch(() => {});
+        finish();
+      }
+    }, maxMs);
+  })();
+
+  return {
+    stop() {
+      if (stopped) return;
+      stopped = true;
+      void SpeechRecognition.stop().catch(() => {});
+      finish();
+    },
+    done,
+  };
+}
+
+function listenLongWeb(onText: (text: string) => void): Listening {
+  const Ctor = webCtor();
+  let resolveDone: (v: string[]) => void = () => {};
+  const done = new Promise<string[]>((r) => (resolveDone = r));
+  if (!Ctor) {
+    resolveDone([]);
+    return { stop() {}, done };
+  }
+  let acc = '';
+  let current = '';
+  let stopped = false;
+  const full = () => `${acc} ${current}`.replace(/\s+/g, ' ').trim();
+  const rec = new Ctor();
+  rec.lang = LANG;
+  rec.interimResults = true;
+  rec.maxAlternatives = 1;
+  rec.continuous = true;
+  rec.onresult = (e) => {
+    let interim = '';
+    let finals = '';
+    for (let i = 0; i < e.results.length; i++) {
+      const r = e.results[i]!;
+      if (r.isFinal) finals += ' ' + r[0]!.transcript;
+      else interim += ' ' + r[0]!.transcript;
+    }
+    current = `${finals} ${interim}`;
+    onText(full());
+  };
+  rec.onend = () => {
+    acc = full();
+    current = '';
+    if (stopped) resolveDone(acc ? [acc] : []);
+    else rec.start();
+  };
+  rec.onerror = () => {};
+  rec.start();
+  return {
+    stop() {
+      stopped = true;
+      rec.stop();
+    },
+    done,
+  };
+}
