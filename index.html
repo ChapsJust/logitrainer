@@ -1,0 +1,600 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#f5f2eb">
+    <meta name="description" content="Entraînez votre mémoire visuelle avec LogiTrainer, un jeu de séquences de palets.">
+    <title>LogiTrainer — entraînez votre mémoire</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #202a35;
+        --muted: #78838b;
+        --paper: #f5f2eb;
+        --card: #fffefa;
+        --line: #e8e4da;
+        --green: #2e7158;
+        --green-dark: #20533f;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        min-width: 320px;
+        min-height: 100vh;
+        margin: 0;
+        color: var(--ink);
+        background:
+          radial-gradient(ellipse at 10% 12%, rgba(226, 218, 198, .35), transparent 30rem),
+          var(--paper);
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      button { font: inherit; }
+
+      .page {
+        width: min(1120px, calc(100% - 48px));
+        margin: 0 auto;
+      }
+
+      .topbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        min-height: 88px;
+      }
+
+      .brand {
+        display: inline-flex;
+        gap: 11px;
+        align-items: center;
+        color: var(--ink);
+        font-size: 19px;
+        font-weight: 800;
+        letter-spacing: -.7px;
+        text-decoration: none;
+      }
+
+      .brand-mark {
+        display: grid;
+        width: 35px;
+        height: 35px;
+        place-items: center;
+        color: white;
+        background: var(--green);
+        border-radius: 12px;
+        font-size: 19px;
+      }
+
+      .top-note {
+        color: var(--muted);
+        font-size: 13px;
+        font-weight: 600;
+      }
+
+      main {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(340px, 430px);
+        gap: clamp(32px, 7vw, 92px);
+        align-items: center;
+        min-height: calc(100vh - 112px);
+        padding: 18px 0 64px;
+      }
+
+      .intro { padding: 24px 0; }
+
+      .eyebrow {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--green);
+        font-size: 12px;
+        font-weight: 800;
+        letter-spacing: 1.25px;
+        text-transform: uppercase;
+      }
+
+      .eyebrow::before {
+        width: 7px;
+        height: 7px;
+        background: #e4a95c;
+        border-radius: 50%;
+        content: "";
+      }
+
+      h1 {
+        max-width: 530px;
+        margin: 20px 0 18px;
+        font-family: Georgia, "Times New Roman", serif;
+        font-size: clamp(44px, 6vw, 70px);
+        font-weight: 500;
+        letter-spacing: -3.4px;
+        line-height: .99;
+      }
+
+      h1 span { color: var(--green); }
+
+      .lead {
+        max-width: 450px;
+        margin: 0;
+        color: #647078;
+        font-size: 16px;
+        line-height: 1.75;
+      }
+
+      .howto {
+        display: flex;
+        gap: 14px;
+        max-width: 420px;
+        margin-top: 37px;
+      }
+
+      .step {
+        display: flex;
+        flex: 1;
+        gap: 9px;
+        align-items: flex-start;
+        color: #747e83;
+        font-size: 12px;
+        line-height: 1.45;
+      }
+
+      .step-number {
+        display: grid;
+        flex: 0 0 25px;
+        width: 25px;
+        height: 25px;
+        place-items: center;
+        color: var(--green);
+        background: #e4ece4;
+        border-radius: 50%;
+        font-size: 11px;
+        font-weight: 800;
+      }
+
+      .game-card {
+        padding: 27px;
+        background: var(--card);
+        border: 1px solid rgba(217, 213, 202, .75);
+        border-radius: 25px;
+        box-shadow: 0 22px 65px rgba(58, 52, 39, .09), 0 3px 8px rgba(58, 52, 39, .03);
+      }
+
+      .game-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 20px;
+      }
+
+      .game-title {
+        margin: 0;
+        font-size: 15px;
+        font-weight: 800;
+      }
+
+      .best-score {
+        display: inline-flex;
+        gap: 6px;
+        align-items: center;
+        color: #747c7e;
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .best-score strong { color: var(--green); }
+
+      .stats {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+        margin-bottom: 19px;
+      }
+
+      .stat {
+        padding: 11px 13px;
+        background: #f7f6f1;
+        border-radius: 12px;
+      }
+
+      .stat-label {
+        display: block;
+        margin-bottom: 4px;
+        color: #89918f;
+        font-size: 10px;
+        font-weight: 800;
+        letter-spacing: .8px;
+        text-transform: uppercase;
+      }
+
+      .stat strong { font-size: 17px; }
+
+      .status {
+        display: flex;
+        min-height: 45px;
+        align-items: center;
+        justify-content: center;
+        margin-bottom: 17px;
+        padding: 9px 12px;
+        color: #65716e;
+        background: #f7f6f1;
+        border-radius: 12px;
+        font-size: 13px;
+        font-weight: 650;
+        text-align: center;
+      }
+
+      .status[data-state="success"] {
+        color: #28694e;
+        background: #e9f2e9;
+      }
+
+      .status[data-state="error"] {
+        color: #a64e3f;
+        background: #fbefeb;
+      }
+
+      .board {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 12px;
+        width: min(100%, 324px);
+        margin: 0 auto;
+        padding: 14px;
+        background: #f0eee7;
+        border-radius: 19px;
+      }
+
+      .palet {
+        display: grid;
+        aspect-ratio: 1;
+        place-items: center;
+        padding: 0;
+        color: white;
+        border: 0;
+        border-radius: 50%;
+        box-shadow: inset 0 -5px 0 rgba(0, 0, 0, .13), 0 3px 6px rgba(0, 0, 0, .12);
+        cursor: pointer;
+        font-size: clamp(20px, 4vw, 31px);
+        transition: transform .12s ease, filter .12s ease, box-shadow .12s ease;
+        -webkit-tap-highlight-color: transparent;
+      }
+
+      .palet:hover:not(:disabled) { transform: translateY(-2px); filter: brightness(1.07); }
+      .palet:active:not(:disabled) { transform: scale(.94); }
+      .palet:focus-visible { outline: 3px solid #263d32; outline-offset: 3px; }
+      .palet:disabled { cursor: default; }
+
+      .palet[data-color="coral"] { background: #e87963; }
+      .palet[data-color="blue"] { background: #5685b3; }
+      .palet[data-color="yellow"] { background: #e5b64e; }
+      .palet[data-color="purple"] { background: #9274b0; }
+      .palet[data-color="teal"] { background: #4a9b91; }
+      .palet[data-color="pink"] { background: #cf7994; }
+      .palet[data-color="orange"] { background: #d98a48; }
+      .palet[data-color="green"] { background: #79a36d; }
+      .palet[data-color="navy"] { background: #596d8e; }
+
+      .palet.is-lit {
+        transform: scale(1.09);
+        filter: brightness(1.25);
+        box-shadow: inset 0 -5px 0 rgba(0, 0, 0, .08), 0 0 0 5px rgba(255, 255, 255, .86), 0 0 20px rgba(48, 69, 54, .32);
+      }
+
+      .controls { margin-top: 19px; }
+
+      .difficulty {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        margin-bottom: 15px;
+      }
+
+      .difficulty-label {
+        margin-right: 3px;
+        color: #858d8b;
+        font-size: 11px;
+        font-weight: 700;
+      }
+
+      .level-choice {
+        min-width: 32px;
+        height: 30px;
+        padding: 0 9px;
+        color: #67726e;
+        background: transparent;
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        cursor: pointer;
+        font-size: 12px;
+        font-weight: 750;
+      }
+
+      .level-choice:disabled { cursor: default; opacity: .55; }
+
+      .level-choice[aria-pressed="true"] {
+        color: var(--green-dark);
+        background: #e9efe7;
+        border-color: #d4e0d2;
+      }
+
+      .level-choice:focus-visible, .primary-button:focus-visible {
+        outline: 3px solid #79a36d;
+        outline-offset: 3px;
+      }
+
+      .primary-button {
+        width: 100%;
+        min-height: 49px;
+        color: white;
+        background: var(--green);
+        border: 0;
+        border-radius: 13px;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: 800;
+        transition: background .15s ease, transform .15s ease;
+      }
+
+      .primary-button:hover { background: var(--green-dark); }
+      .primary-button:active { transform: translateY(1px); }
+      .primary-button:disabled { opacity: .58; cursor: wait; }
+
+      .game-hint {
+        margin: 12px 0 0;
+        color: #969d99;
+        font-size: 11px;
+        text-align: center;
+      }
+
+      footer {
+        padding: 14px 0 24px;
+        color: #9a9e97;
+        font-size: 11px;
+        text-align: center;
+      }
+
+      @media (max-width: 760px) {
+        .page { width: min(510px, calc(100% - 34px)); }
+        .topbar { min-height: 72px; }
+        .top-note { font-size: 11px; }
+        main {
+          grid-template-columns: 1fr;
+          gap: 9px;
+          min-height: 0;
+          padding: 24px 0 32px;
+        }
+        .intro { padding: 8px 0 12px; }
+        h1 { max-width: 440px; margin: 14px 0; font-size: clamp(43px, 11vw, 59px); }
+        .lead { font-size: 14px; }
+        .howto { margin-top: 20px; }
+        .game-card { padding: 22px; }
+        footer { padding-top: 4px; }
+      }
+
+      @media (max-width: 390px) {
+        .game-card { padding: 17px; }
+        .board { gap: 9px; padding: 11px; }
+        .howto { gap: 8px; }
+        .step { gap: 6px; font-size: 11px; }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <header class="topbar">
+        <a class="brand" href="#" aria-label="LogiTrainer, accueil">
+          <span class="brand-mark" aria-hidden="true">✳</span>
+          <span>logi<span style="color: var(--green)">trainer</span></span>
+        </a>
+        <span class="top-note">Un petit entraînement, un grand esprit.</span>
+      </header>
+
+      <main>
+        <section class="intro" aria-labelledby="main-title">
+          <span class="eyebrow">Le rendez-vous des neurones</span>
+          <h1 id="main-title">La mémoire<br>se joue <span>un palet</span><br>à la fois.</h1>
+          <p class="lead">Observez les palets qui s’illuminent, puis reproduisez leur séquence. À chaque réussite, le défi s’allonge. Prêt·e à faire travailler votre mémoire ?</p>
+          <div class="howto" aria-label="Comment jouer">
+            <div class="step"><span class="step-number">1</span><span>Observez la séquence</span></div>
+            <div class="step"><span class="step-number">2</span><span>Rejouez-la dans l’ordre</span></div>
+            <div class="step"><span class="step-number">3</span><span>Progressez à votre rythme</span></div>
+          </div>
+        </section>
+
+        <section class="game-card" aria-labelledby="game-title">
+          <div class="game-header">
+            <h2 class="game-title" id="game-title">Votre partie</h2>
+            <span class="best-score">✦ Record <strong id="best-score">0</strong></span>
+          </div>
+          <div class="stats" aria-label="Statistiques de la partie">
+            <div class="stat"><span class="stat-label">Niveau</span><strong id="level-value">—</strong></div>
+            <div class="stat"><span class="stat-label">À mémoriser</span><strong id="sequence-value">—</strong></div>
+          </div>
+          <div class="status" id="status" role="status" aria-live="polite">Choisissez une longueur et lancez la partie.</div>
+          <div class="board" id="board" aria-label="Plateau de neuf palets"></div>
+          <div class="controls">
+            <div class="difficulty" role="group" aria-label="Longueur de départ">
+              <span class="difficulty-label">Départ</span>
+              <button class="level-choice" type="button" data-length="3" aria-pressed="true">3</button>
+              <button class="level-choice" type="button" data-length="4" aria-pressed="false">4</button>
+              <button class="level-choice" type="button" data-length="5" aria-pressed="false">5</button>
+              <span class="difficulty-label">palets</span>
+            </div>
+            <button class="primary-button" id="start-button" type="button">Commencer à jouer <span aria-hidden="true">→</span></button>
+            <p class="game-hint">Votre meilleur score reste enregistré sur cet appareil.</p>
+          </div>
+        </section>
+      </main>
+
+      <footer>Fait pour entraîner la mémoire, une séquence à la fois.</footer>
+    </div>
+
+    <script>
+      (() => {
+        const colors = ["coral", "blue", "yellow", "purple", "teal", "pink", "orange", "green", "navy"];
+        const symbols = ["●", "◆", "✦", "▲", "■", "✿", "⬟", "✚", "◉"];
+        const board = document.querySelector("#board");
+        const status = document.querySelector("#status");
+        const startButton = document.querySelector("#start-button");
+        const lengthValue = document.querySelector("#sequence-value");
+        const levelValue = document.querySelector("#level-value");
+        const bestValue = document.querySelector("#best-score");
+        const difficultyButtons = [...document.querySelectorAll(".level-choice")];
+        let state = "ready";
+        let initialLength = 3;
+        let level = 0;
+        let sequence = [];
+        let inputIndex = 0;
+        let best = 0;
+        let playId = 0;
+        let canRetry = false;
+
+        try {
+          best = Number(localStorage.getItem("logitrainer-best")) || 0;
+        } catch {
+          best = 0;
+        }
+        bestValue.textContent = String(best);
+
+        const palets = colors.map((color, index) => {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "palet";
+          button.dataset.color = color;
+          button.textContent = symbols[index];
+          button.setAttribute("aria-label", `Palet ${index + 1}`);
+          button.disabled = true;
+          button.addEventListener("click", () => selectPalet(index));
+          board.append(button);
+          return button;
+        });
+
+        const wait = (milliseconds) => new Promise((resolve) => window.setTimeout(resolve, milliseconds));
+
+        function setStatus(message, stateName = "") {
+          status.textContent = message;
+          status.dataset.state = stateName;
+        }
+
+        function setGameState(nextState) {
+          state = nextState;
+          palets.forEach((palet) => { palet.disabled = nextState !== "input"; });
+          difficultyButtons.forEach((button) => { button.disabled = nextState !== "ready"; });
+          startButton.disabled = nextState === "showing" || nextState === "transition";
+        }
+
+        function makeSequence(length) {
+          return Array.from({ length }, () => Math.floor(Math.random() * palets.length));
+        }
+
+        async function showSequence(id) {
+          setGameState("showing");
+          setStatus("Regardez bien…");
+          for (const index of sequence) {
+            if (id !== playId) return;
+            await wait(300);
+            if (id !== playId) return;
+            palets[index].classList.add("is-lit");
+            await wait(450);
+            palets[index].classList.remove("is-lit");
+          }
+          if (id !== playId) return;
+          inputIndex = 0;
+          setGameState("input");
+          setStatus("À vous de jouer — reproduisez la séquence.");
+        }
+
+        function startRound() {
+          playId += 1;
+          canRetry = false;
+          sequence = makeSequence(level);
+          inputIndex = 0;
+          lengthValue.textContent = String(sequence.length);
+          levelValue.textContent = String(level - initialLength + 1);
+          startButton.textContent = "Rejouer la séquence ↻";
+          showSequence(playId);
+        }
+
+        function startGame() {
+          canRetry = false;
+          initialLength = Number(difficultyButtons.find((button) => button.getAttribute("aria-pressed") === "true").dataset.length);
+          level = initialLength;
+          startButton.textContent = "Rejouer la séquence ↻";
+          startRound();
+        }
+
+        async function selectPalet(index) {
+          if (state !== "input") return;
+          const palet = palets[index];
+          palet.classList.add("is-lit");
+          window.setTimeout(() => palet.classList.remove("is-lit"), 180);
+
+          if (sequence[inputIndex] !== index) {
+            canRetry = true;
+            setGameState("ready");
+            setStatus("Oups, ce n’était pas le bon palet. Réessayez cette séquence.", "error");
+            startButton.textContent = "Réessayer";
+            return;
+          }
+
+          inputIndex += 1;
+          if (inputIndex < sequence.length) {
+            setStatus(`Bien joué ! Encore ${sequence.length - inputIndex} palet${sequence.length - inputIndex > 1 ? "s" : ""}…`);
+            return;
+          }
+
+          level += 1;
+          if (sequence.length > best) {
+            best = sequence.length;
+            bestValue.textContent = String(best);
+            try {
+              localStorage.setItem("logitrainer-best", String(best));
+            } catch {
+              // Le jeu reste jouable si le stockage local est indisponible.
+            }
+          }
+          if (sequence.length === palets.length) {
+            setGameState("ready");
+            levelValue.textContent = "✓";
+            setStatus("Incroyable ! Vous avez réussi la séquence maximale.", "success");
+            startButton.textContent = "Recommencer";
+            return;
+          }
+          setGameState("transition");
+          setStatus("Séquence réussie ! On passe au niveau suivant.", "success");
+          await wait(850);
+          if (state !== "transition") return;
+          startRound();
+        }
+
+        startButton.addEventListener("click", () => {
+          if (canRetry) {
+            canRetry = false;
+            showSequence(playId);
+            return;
+          }
+          startGame();
+        });
+        difficultyButtons.forEach((button) => {
+          button.addEventListener("click", () => {
+            if (state !== "ready") return;
+            canRetry = false;
+            initialLength = Number(button.dataset.length);
+            difficultyButtons.forEach((choice) => choice.setAttribute("aria-pressed", String(choice === button)));
+            levelValue.textContent = "—";
+            lengthValue.textContent = "—";
+            setStatus("Choisissez une longueur et lancez la partie.");
+            startButton.textContent = "Commencer à jouer →";
+          });
+        });
+      })();
+    </script>
+  </body>
+</html>
