@@ -42,3 +42,33 @@ export async function writeStartupBackup(json: string): Promise<void> {
     // pas grave
   }
 }
+
+/** Copie de sécurité faite au dernier démarrage réussi. */
+export async function readBackup(): Promise<string | null> {
+  if (isNative()) {
+    try {
+      const res = await Filesystem.readFile({ path: BACKUP, directory: Directory.Data, encoding: Encoding.UTF8 });
+      return typeof res.data === 'string' ? res.data : await res.data.text();
+    } catch {
+      return null;
+    }
+  }
+  try {
+    return localStorage.getItem(LS_KEY + '.backup');
+  } catch {
+    return null;
+  }
+}
+
+/** Écrit une copie nommée (avant migration, fichier abîmé…). Ne lève jamais d'erreur. */
+export async function writeNamed(name: string, json: string): Promise<void> {
+  try {
+    if (isNative()) {
+      await Filesystem.writeFile({ path: name, directory: Directory.Data, encoding: Encoding.UTF8, data: json });
+    } else {
+      localStorage.setItem(`${LS_KEY}.${name}`, json);
+    }
+  } catch {
+    // pas grave
+  }
+}

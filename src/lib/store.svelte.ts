@@ -1,59 +1,30 @@
-import type { Content, ContentItem, Data, Locus, Palace, QuizResult, Room } from './types';
-import { readRaw, writeRaw, writeStartupBackup } from './storage';
+import type { Content, ContentItem, Data, Locus, Palace, Place, PlaceIcon, QuizResult, Room } from './types';
+import { readBackup, readRaw, writeNamed, writeRaw, writeStartupBackup } from './storage';
+import { CURRENT_SCHEMA, NewerDataError, parseData } from './migrate';
+
+export { parseData };
 import { flatLoci, move, uid } from './util';
 import { nextReview, snooze } from './review';
 
 function emptyData(): Data {
-  return { schema: 1, palaces: [], contents: [], numbers: {}, settings: { theme: 'auto' } };
+  return { schema: 2, places: [], palaces: [], contents: [], numbers: {}, settings: { theme: 'auto' } };
 }
 
 /** Toutes les données de l'app. Toute modification est sauvegardée automatiquement. */
 export const db: Data = $state(emptyData());
 
-export const status = $state({ loaded: false, saveError: '' });
-
-/** Vérifie et complète des données venant du stockage ou d'un fichier importé. */
-export function parseData(json: string): Data {
-  const raw = JSON.parse(json) as Partial<Data>;
-  if (!raw || typeof raw !== 'object' || !Array.isArray(raw.palaces)) {
-    throw new Error("Ce fichier ne ressemble pas à une sauvegarde Logidex.");
-  }
-  const base = emptyData();
-  return {
-    schema: 1,
-    palaces: raw.palaces.map((p) => ({
-      id: p.id ?? uid(),
-      name: p.name ?? 'Palais',
-      emoji: p.emoji ?? '🏛️',
-      description: p.description ?? '',
-      createdAt: p.createdAt ?? Date.now(),
-      updatedAt: p.updatedAt ?? Date.now(),
-      lastQuiz: p.lastQuiz,
-      review: p.review,
-      rooms: (p.rooms ?? []).map((r) => ({
-        id: r.id ?? uid(),
-        name: r.name ?? '',
-        loci: (r.loci ?? []).map((l) => ({ id: l.id ?? uid(), name: l.name ?? '', description: l.description ?? '' })),
-      })),
-    })),
-    contents: (raw.contents ?? []).map((c) => ({
-      id: c.id ?? uid(),
-      palaceId: c.palaceId,
-      title: c.title ?? 'Contenu',
-      notes: c.notes ?? '',
-      items: c.items ?? {},
-      createdAt: c.createdAt ?? Date.now(),
-      updatedAt: c.updatedAt ?? Date.now(),
-      lastQuiz: c.lastQuiz,
-      review: c.review,
-      archived: c.archived,
-    })),
-    numbers: raw.numbers ?? {},
-    settings: { ...base.settings, ...(raw.settings ?? {}) },
-  };
-}
+export const status = $state({
+  loaded: false,
+  saveError: '',
+  /** Message d'information (ex. données récupérées depuis une copie). */
+  notice: '',
+  /** Vrai si on ne doit surtout pas réécrire le fichier (données illisibles ou trop récentes). */
+  readOnly: false,
+});
 
 function replaceAll(data: Data) {
+  db.schema = data.schema;
+  db.places = data.places;
   db.palaces = data.palaces;
   db.contents = data.contents;
   db.numbers = data.numbers;
@@ -64,10 +35,31 @@ export async function load(): Promise<void> {
   const raw = await readRaw();
   if (raw) {
     try {
-      replaceAll(parseData(raw));
+      const { data, from } = parseData(raw);
+      if (from < CURRENT_SCHEMA) {
+        // Copie intacte de l'ancien format avant de le transformer.
+        await writeNamed(`logidex.avant-format-${CURRENT_SCHEMA}.json`, raw);
+      }
+      replaceAll(data);
       await writeStartupBackup(raw);
     } catch (e) {
-      status.saveError = 'Données illisibles : ' + (e as Error).message;
+      if (e instanceof NewerDataError) {
+        status.readOnly = true;
+        status.saveError = e.message;
+      } else {
+        // Fichier abîmé : on le met de côté et on repart de la copie faite au dernier démarrage réussi.
+        await writeNamed(`logidex.illisible-${Date.now()}.json`, raw);
+        const backup = await readBackup();
+        try {
+          if (!backup) throw new Error('aucune copie');
+          replaceAll(parseData(backup).data);
+          status.notice = 'Le fichier de données était abîmé : tes données ont été récupérées depuis la dernière copie.';
+        } catch {
+          status.readOnly = true;
+          status.saveError =
+            'Données illisibles. Rien n’a été effacé : importe une sauvegarde (Réglages) ou une copie de Documents/Logidex.';
+        }
+      }
     }
   }
   status.loaded = true;
@@ -78,7 +70,7 @@ export async function load(): Promise<void> {
   $effect.root(() => {
     $effect(() => {
       const json = JSON.stringify(db);
-      if (json === last) return;
+      if (json === last || status.readOnly) return;
       clearTimeout(timer);
       timer = setTimeout(() => {
         last = json;
@@ -91,7 +83,10 @@ export async function load(): Promise<void> {
 }
 
 export function importData(json: string): void {
-  replaceAll(parseData(json));
+  replaceAll(parseData(json).data);
+  // Un import réussi remplace des données illisibles : on peut de nouveau sauvegarder.
+  status.readOnly = false;
+  status.saveError = '';
 }
 
 /** Copie de l'état complet, pour « Annuler ». */
@@ -100,7 +95,29 @@ export function snapshot(): string {
 }
 
 export function restore(json: string): void {
-  replaceAll(parseData(json));
+  replaceAll(parseData(json).data);
+}
+
+/* ---------- Lieux ---------- */
+
+export function getPlace(id: string | undefined): Place | undefined {
+  return id ? db.places.find((l) => l.id === id) : undefined;
+}
+
+export function createPlace(name: string, icon: PlaceIcon = 'building'): Place {
+  db.places.push({ id: uid(), name: name.trim() || 'Nouveau lieu', icon, createdAt: Date.now() });
+  return db.places[db.places.length - 1]!;
+}
+
+/** Palais d'un lieu (ou sans lieu si `placeId` est undefined), les plus récents d'abord. */
+export function palacesOf(placeId: string | undefined): Palace[] {
+  return db.palaces.filter((p) => (p.placeId ?? undefined) === placeId).sort((a, b) => b.updatedAt - a.updatedAt);
+}
+
+/** Supprime le lieu ; ses palais sont gardés, simplement sans lieu. */
+export function deletePlace(id: string): void {
+  for (const p of db.palaces) if (p.placeId === id) p.placeId = undefined;
+  db.places = db.places.filter((l) => l.id !== id);
 }
 
 /* ---------- Palais ---------- */
@@ -109,11 +126,13 @@ export function getPalace(id: string): Palace | undefined {
   return db.palaces.find((p) => p.id === id);
 }
 
-export function createPalace(name: string, emoji: string): Palace {
+export function createPalace(name: string, emoji: string, placeId?: string, subject?: string): Palace {
   const now = Date.now();
   db.palaces.push({
     id: uid(),
     name: name.trim() || 'Nouveau palais',
+    placeId: placeId || undefined,
+    subject: subject?.trim() || undefined,
     emoji,
     description: '',
     rooms: [{ id: uid(), name: '', loci: [] }],

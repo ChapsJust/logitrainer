@@ -45,6 +45,15 @@
     key: 'M2.5 21.5l8.3-8.3M15 13a5 5 0 1 0 0-10 5 5 0 0 0 0 10zM6 17l2 2M8 15l2 2',
     alert: 'M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0zM12 9v4M12 17h.01',
     check2: 'M22 11.1V12a10 10 0 1 1-5.9-9.1M22 4 12 14l-3-3',
+    building: 'M4 21V5l8-3 8 3v16M9 21v-4h6v4M8 8h.01M12 8h.01M16 8h.01M8 12h.01M12 12h.01M16 12h.01',
+    briefcase: 'M3 7h18v13H3zM8 7V4h8v3M3 13h18',
+    tree: 'M12 22v-6M12 2 5 12h4l-3 4h12l-3-4h4z',
+    map: 'M9 4 3 6v14l6-2 6 2 6-2V4l-6 2zM9 4v14M15 6v14',
+    star: 'M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9z',
+    minus: 'M5 12h14',
+    enter: 'M9 10l-5 5 5 5M20 4v7a4 4 0 0 1-4 4H4',
+    chevronDown: 'M6 9l6 6 6-6',
+    chevronUp: 'M18 15l-6-6-6 6',
   } as const;
 
   export type IconName = keyof typeof ICONS;

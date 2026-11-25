@@ -6,8 +6,11 @@ export type Route =
   | { name: 'search' }
   | { name: 'numbers' }
   | { name: 'settings' }
-  | { name: 'palace'; id: string; tab?: 'trajet' | 'contents' }
-  | { name: 'content'; id: string }
+  | { name: 'place'; id: string }
+  | { name: 'palace'; id: string; tab?: 'trajet' | 'contents'; focus?: string }
+  | { name: 'content'; id: string; focus?: string }
+  | { name: 'fill'; id: string; start?: number }
+  | { name: 'numbers-create'; start: string }
   | { name: 'quiz'; kind: QuizKind; id?: string; order: QuizOrder }
   | { name: 'walk'; palaceId: string; contentId?: string };
 
