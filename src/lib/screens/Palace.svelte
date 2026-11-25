@@ -25,6 +25,9 @@
   import { contentDue, dueLabel, palaceDue } from '../review';
   import { haptic } from '../haptics';
   import type { Locus, Room } from '../types';
+  import Avatar from '../components/Avatar.svelte';
+  import { OCCUPANCY_LABEL, freePalaces, overlaps, palaceUse } from '../interference';
+  import { db } from '../store.svelte';
 
   let { id, tab: initialTab = 'trajet' }: { id: string; tab?: 'trajet' | 'contents' } = $props();
 
@@ -60,6 +63,16 @@
   const showRoomHeaders = $derived(!!palace && (palace.rooms.length > 1 || !!palace.rooms[0]?.name));
   const namedRooms = $derived(palace ? palace.rooms.filter((r) => r.name).length : 0);
   const due = $derived(palace ? palaceDue(palace) : null);
+  const use = $derived(palace ? palaceUse(palace) : null);
+  const activeContents = $derived(contents.filter((c) => !c.archived));
+  const archivedContents = $derived(contents.filter((c) => c.archived));
+
+  // Choix du palais pour un nouveau contenu
+  // svelte-ignore state_referenced_locally
+  let targetPalaceId = $state(id);
+  const chosen = $derived(getPalace(targetPalaceId));
+  const chosenUse = $derived(chosen ? palaceUse(chosen) : null);
+  const suggestions = $derived(freePalaces(targetPalaceId).slice(0, 2));
 
   /* ---------- Ajout rapide ---------- */
 
@@ -198,7 +211,7 @@
 
   function createNewContent() {
     if (!palace) return;
-    const c = createContent(palace.id, newContentTitle);
+    const c = createContent(targetPalaceId, newContentTitle);
     newContentOpen = false;
     newContentTitle = '';
     nav.go({ name: 'content', id: c.id });
@@ -236,6 +249,37 @@
     </p>
     {#if palace.description}
       <p class="body-m page-sub desc">{palace.description}</p>
+    {/if}
+
+    {#if use && flat.length}
+      {#if use.state === 'mixed'}
+        {@const names = use.active.filter((c) => [...use.sharedLoci].some((l) => c.items[l]?.text)).map((c) => c.title)}
+        <button class="occ card-warn" onclick={() => setTab('contents')}>
+          <Icon name="alert" />
+          <span class="grow">
+            <span class="title-m">Mélange possible</span>
+            <span class="body-m">
+              « {names.join(' » et « ')} » partagent {plural(use.sharedLoci.size, 'locus', 'loci')}. Archive l'ancien ou déplace-en un
+              dans un palais libre.
+            </span>
+          </span>
+          <Icon name="next" size={20} />
+        </button>
+      {:else if use.state === 'used'}
+        <div class="occ card-filled compact">
+          <Icon name="book" size={20} class="onv" />
+          <span class="body-m grow">
+            Occupé par {use.active.length === 1 ? `« ${use.active[0]?.title} »` : plural(use.active.length, 'contenu', 'contenus')}
+          </span>
+          <span class="spill used">{OCCUPANCY_LABEL.used}</span>
+        </div>
+      {:else}
+        <div class="occ card-ok compact">
+          <Icon name="check2" size={20} />
+          <span class="body-m grow">Prêt à recevoir un nouveau contenu</span>
+          <span class="spill free">{OCCUPANCY_LABEL.free}</span>
+        </div>
+      {/if}
     {/if}
 
     <div class="segmented" role="tablist">
@@ -280,7 +324,7 @@
               style:transform={lifted ? `translateY(${drag?.dy ?? 0}px)` : undefined}
             >
               <button class="list-item grow" onclick={() => openLocus(locus)}>
-                <span class="num">{numberOf.get(locus.id)}</span>
+                <span class="num" class:shared={use?.sharedLoci.has(locus.id)} title={use?.sharedLoci.has(locus.id) ? 'Locus partagé par plusieurs contenus' : undefined}>{numberOf.get(locus.id)}</span>
                 <span class="li-text">
                   <span class="li-head ellipsis">{locus.name || 'Sans nom'}</span>
                   {#if locus.description}<span class="li-sup ellipsis">{locus.description}</span>{/if}
@@ -337,22 +381,27 @@
       {/if}
     {:else}
       <div style="height: 8px"></div>
-      {#each contents as c, i (c.id)}
+      {#each activeContents as c, i (c.id)}
         {@const filled = filledCount(c, palace)}
         {@const cd = contentDue(c, palace)}
+        {@const ov = overlaps(c)}
         <button class="list-item two" onclick={() => nav.go({ name: 'content', id: c.id })}>
-          <span class="ring" style:--pct={flat.length ? filled / flat.length : 0}>
-            <Icon name="book" size={20} />
+          <span class="ring" class:warn={ov.length > 0} style:--pct={flat.length ? filled / flat.length : 0}>
+            <Icon name={ov.length ? 'alert' : 'book'} size={20} />
           </span>
           <span class="li-text">
             <span class="li-head ellipsis">{c.title}</span>
-            <span class="li-sup ellipsis">
-              {filled}/{flat.length} placés{cd !== null ? ' · révision ' + dueLabel(cd) : ''}
-            </span>
+            {#if ov.length}
+              <span class="li-sup ellipsis warn-text">
+                Partage {plural(ov[0]?.count ?? 0, 'locus', 'loci')} avec « {ov[0]?.content.title} »
+              </span>
+            {:else}
+              <span class="li-sup ellipsis">{filled}/{flat.length} placés{cd !== null ? ' · révision ' + dueLabel(cd) : ''}</span>
+            {/if}
           </span>
           <Icon name="next" size={20} class="onv" />
         </button>
-        {#if i < contents.length - 1}<div class="divider"></div>{/if}
+        {#if i < activeContents.length - 1}<div class="divider"></div>{/if}
       {:else}
         <div class="empty">
           <div class="art"><Icon name="book" size={32} /></div>
@@ -363,7 +412,27 @@
           </p>
         </div>
       {/each}
-      <button class="fab no-nav" onclick={() => (newContentOpen = true)}><Icon name="plus" />Contenu</button>
+
+      {#if archivedContents.length}
+        <h2 class="subheader">Archivés · ne comptent plus</h2>
+        {#each archivedContents as c (c.id)}
+          <button class="list-item two archived" onclick={() => nav.go({ name: 'content', id: c.id })}>
+            <span class="num"><Icon name="archive" size={20} /></span>
+            <span class="li-text">
+              <span class="li-head ellipsis">{c.title}</span>
+              <span class="li-sup ellipsis">{filledCount(c, palace)} éléments · plus de révisions</span>
+            </span>
+            <Icon name="next" size={20} class="onv" />
+          </button>
+        {/each}
+      {/if}
+      <button
+        class="fab no-nav"
+        onclick={() => {
+          targetPalaceId = palace.id;
+          newContentOpen = true;
+        }}><Icon name="plus" />Contenu</button
+      >
     {/if}
   </div>
 
@@ -518,7 +587,43 @@
         <!-- svelte-ignore a11y_autofocus -->
         <input bind:value={newContentTitle} placeholder="Ex. Tableau périodique 1 à 20" autofocus enterkeyhint="done" />
       </label>
-      <div class="row" style="justify-content: flex-end">
+
+      <p class="label-l primary" style="margin: 4px 0 4px">Dans quel palais ?</p>
+      <div class="picker">
+        {#each db.palaces as p (p.id)}
+          {@const u = palaceUse(p)}
+          <button type="button" class="pick" class:on={targetPalaceId === p.id} onclick={() => (targetPalaceId = p.id)}>
+            <Avatar id={p.id} name={p.name} size={36} />
+            <span class="li-text">
+              <span class="body-l ellipsis">{p.name}</span>
+              <span class="body-m onv">{plural(lociCount(p), 'locus', 'loci')}</span>
+            </span>
+            <span class="spill {u.state}">{OCCUPANCY_LABEL[u.state]}</span>
+          </button>
+        {/each}
+      </div>
+
+      {#if chosen && chosenUse && chosenUse.state !== 'free'}
+        <div class="card-warn advice">
+          <p class="body-m">
+            <b>Ce palais porte déjà {chosenUse.active.length === 1 ? `« ${chosenUse.active[0]?.title} »` : plural(chosenUse.active.length, 'contenu', 'contenus')}.</b>
+            Deux contenus sur les mêmes loci finissent souvent par se mélanger.
+          </p>
+          {#if suggestions.length}
+            <div class="row" style="flex-wrap: wrap; margin-top: 8px">
+              {#each suggestions as sp (sp.id)}
+                <button type="button" class="btn filled has-icon" onclick={() => (targetPalaceId = sp.id)}>
+                  <Icon name="check" size={18} />{sp.name} (libre)
+                </button>
+              {/each}
+            </div>
+          {:else}
+            <p class="body-m" style="margin-top: 6px">Astuce : archive l'ancien contenu si tu n'as plus besoin de le retenir.</p>
+          {/if}
+        </div>
+      {/if}
+
+      <div class="row" style="justify-content: flex-end; margin-top: 16px">
         <button class="btn text" type="button" onclick={() => (newContentOpen = false)}>Annuler</button>
         <button class="btn filled" type="submit">Créer</button>
       </div>
@@ -642,6 +747,69 @@
     background:
       radial-gradient(closest-side, var(--surface) 82%, transparent 83%),
       conic-gradient(var(--p) calc(var(--pct) * 360deg), var(--surface-highest) 0);
+  }
+
+  .occ {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 12px 16px 0;
+    width: calc(100% - 32px);
+    text-align: left;
+  }
+
+  .occ .grow {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .occ.compact {
+    padding: 10px 12px 10px 16px;
+  }
+
+  .num.shared {
+    background: var(--warn-c);
+    color: var(--onwarn-c);
+    box-shadow: 0 0 0 2px var(--warn);
+  }
+
+  .ring.warn {
+    color: var(--warn);
+  }
+
+  .warn-text {
+    color: var(--warn);
+  }
+
+  .archived {
+    opacity: 0.7;
+  }
+
+  .picker {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin: 0 -8px;
+  }
+
+  .pick {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px;
+    border-radius: 16px;
+    border: 2px solid transparent;
+    text-align: left;
+    width: 100%;
+  }
+
+  .pick.on {
+    border-color: var(--p);
+    background: var(--surface-high);
+  }
+
+  .advice {
+    margin-top: 12px;
   }
 
   .placed {

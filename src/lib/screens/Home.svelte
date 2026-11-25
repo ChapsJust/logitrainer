@@ -2,13 +2,15 @@
   import Sheet from '../components/Sheet.svelte';
   import Icon from '../components/Icon.svelte';
   import Avatar from '../components/Avatar.svelte';
-  import { contentsOf, createPalace, createSample, db, getPalace, snoozeReview } from '../store.svelte';
+  import { createPalace, createSample, db, getPalace, snoozeReview } from '../store.svelte';
   import { nav, type Route } from '../nav.svelte';
   import { lociCount, plural } from '../util';
   import { app, toast } from '../app.svelte';
   import { contentDue, dueLabel, isDue, palaceDue } from '../review';
   import { haptic } from '../haptics';
+  import { syncReminders } from '../reminders';
   import type { Content, Palace } from '../types';
+  import { OCCUPANCY_LABEL, palaceUse } from '../interference';
 
   interface DueItem {
     key: string;
@@ -64,6 +66,7 @@
     for (const d of dueNow) snoozeReview(d.target);
     haptic.tap();
     toast('Révisions repoussées à demain');
+    void syncReminders();
   }
 
   function create() {
@@ -146,17 +149,21 @@
   {:else}
     <h2 class="subheader">Tous les palais</h2>
     {#each palaces as p (p.id)}
-      {@const nc = contentsOf(p.id).length}
+      {@const use = palaceUse(p)}
       {@const nr = p.rooms.filter((r) => r.name).length}
       <button class="list-item two" onclick={() => nav.go({ name: 'palace', id: p.id })}>
         <Avatar id={p.id} name={p.name} />
         <span class="li-text">
           <span class="li-head ellipsis">{p.name}</span>
           <span class="li-sup ellipsis">
-            {nr ? plural(nr, 'pièce', 'pièces') + ' · ' : ''}{plural(nc, 'contenu', 'contenus')}
+            {plural(lociCount(p), 'locus', 'loci')}{nr ? ' · ' + plural(nr, 'pièce', 'pièces') : ''}{use.active.length
+              ? ' · ' + plural(use.active.length, 'contenu actif', 'contenus actifs')
+              : ''}
           </span>
         </span>
-        <span class="li-trail">{plural(lociCount(p), 'locus', 'loci')}</span>
+        <span class="spill {use.state}">
+          {#if use.state === 'mixed'}<Icon name="alert" size={14} stroke={2.2} />{/if}{OCCUPANCY_LABEL[use.state]}
+        </span>
       </button>
     {/each}
   {/if}

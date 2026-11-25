@@ -55,6 +55,8 @@ export interface Content {
   notes: string;
   /** Clé = id du locus. Le contenu suit le locus si on réorganise le trajet. */
   items: Record<string, ContentItem>;
+  /** Archivé = plus besoin de le retenir : ne compte plus dans l'occupation ni les révisions. */
+  archived?: boolean;
   createdAt: number;
   updatedAt: number;
   lastQuiz?: QuizResult;
@@ -70,6 +72,12 @@ export interface Settings {
   lastAutoBackupAt?: number;
   autoBackupError?: string;
   onboarded?: boolean;
+  /** Quiz : réciter à voix haute (ou écrire) avant de révéler. */
+  recite?: boolean;
+  /** Rappel quotidien des révisions. */
+  reminder?: { enabled: boolean; time: string };
+  /** Déjà proposé d'activer le rappel. */
+  reminderAsked?: boolean;
 }
 
 export interface Data {

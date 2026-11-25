@@ -3,10 +3,17 @@
   import Icon from '../components/Icon.svelte';
   import { db, getContent, getPalace, recordQuiz } from '../store.svelte';
   import { nav, type QuizKind, type QuizOrder } from '../nav.svelte';
-  import { flatLoci, shuffle } from '../util';
+  import { flatLoci, isNative, shuffle } from '../util';
   import { majorHint } from '../major';
   import { dueLabel } from '../review';
   import { haptic } from '../haptics';
+  import { compare, type MatchResult } from '../match';
+  import { ensureMicPermission, listen, speechAvailable, type Listening } from '../speech';
+  import { neighbours } from '../interference';
+  import { askNotificationPermission, DEFAULT_TIME, syncReminders } from '../reminders';
+  import { toast } from '../app.svelte';
+
+  type Grade = 'known' | 'partial' | 'missed';
 
   interface Card {
     key: string;
@@ -67,14 +74,71 @@
   // svelte-ignore state_referenced_locally
   const built = buildCards();
   // svelte-ignore state_referenced_locally
+  const content = kind === 'content' && id ? getContent(id) : undefined;
+  // svelte-ignore state_referenced_locally
   let deck = $state(ordered(built.cards, order));
   let index = $state(0);
-  let shown = $state(false);
-  let missed = $state<Card[]>([]);
+  let results = $state<{ card: Card; grade: Grade }[]>([]);
   let isRetry = $state(false);
   let nextDue = $state<number | null>(null);
   const done = $derived(index >= deck.length);
   const card = $derived(deck[index]);
+
+  /* ---------- Réciter ---------- */
+  const recite = db.settings.recite ?? true;
+  let canSpeak = $state(false);
+  void speechAvailable().then((v) => (canSpeak = v));
+
+  let phase = $state<'ask' | 'listening' | 'typing' | 'shown'>('ask');
+  let transcript = $state('');
+  let typed = $state('');
+  let match = $state<MatchResult | null>(null);
+  let said = $state('');
+  let session: Listening | null = null;
+  let typeInput: HTMLInputElement | undefined = $state();
+
+  async function startListening() {
+    if (!(await ensureMicPermission())) {
+      toast('Micro non autorisé : tu peux écrire ta réponse.');
+      startTyping();
+      return;
+    }
+    haptic.medium();
+    transcript = '';
+    phase = 'listening';
+    session = listen((t) => (transcript = t));
+    const alternatives = await session.done;
+    session = null;
+    if (phase !== 'listening') return;
+    finishAttempt(alternatives.length ? alternatives : transcript ? [transcript] : []);
+  }
+
+  function stopListening() {
+    session?.stop();
+  }
+
+  function startTyping() {
+    typed = '';
+    phase = 'typing';
+    setTimeout(() => typeInput?.focus(), 50);
+  }
+
+  function finishAttempt(attempts: string[]) {
+    if (!card) return;
+    said = attempts[0] ?? '';
+    match = attempts.length && said.trim() ? compare(card.answer, attempts) : null;
+    phase = 'shown';
+    haptic.tap();
+  }
+
+  function reveal() {
+    if (phase === 'shown') return;
+    session?.stop();
+    match = null;
+    said = '';
+    phase = 'shown';
+    haptic.tap();
+  }
 
   /* ---------- Glisser la carte ---------- */
   let dx = $state(0);
@@ -86,7 +150,7 @@
   const THRESHOLD = 90;
 
   function down(e: PointerEvent) {
-    if (!shown || flying) return;
+    if (phase !== 'shown' || flying) return;
     dragging = true;
     moved = false;
     startX = e.clientX;
@@ -107,73 +171,99 @@
   function up() {
     if (!dragging) return;
     dragging = false;
-    if (dx >= THRESHOLD) fly(1);
-    else if (dx <= -THRESHOLD) fly(-1);
+    if (dx >= THRESHOLD) grade('known');
+    else if (dx <= -THRESHOLD) grade('missed');
     else dx = 0;
-  }
-
-  function fly(dir: 1 | -1) {
-    flying = dir;
-    moved = false;
-    setTimeout(() => {
-      answer(dir === 1);
-      flying = 0;
-      dx = 0;
-    }, 180);
-  }
-
-  function reveal() {
-    if (shown) return;
-    shown = true;
-    haptic.tap();
   }
 
   function tapCard() {
     if (moved) return;
-    reveal();
+    if (phase === 'ask' && !(recite && kind !== 'numbers')) reveal();
   }
 
-  function answer(knew: boolean) {
-    if (!knew && card) missed.push(card);
+  function grade(g: Grade) {
+    if (!card || flying) return;
+    flying = g === 'missed' ? -1 : 1;
+    moved = false;
     haptic.tap();
-    shown = false;
-    index++;
-    if (index >= deck.length) finish();
+    const c = card;
+    setTimeout(() => {
+      results.push({ card: c, grade: g });
+      flying = 0;
+      dx = 0;
+      phase = 'ask';
+      match = null;
+      said = '';
+      index++;
+      if (index >= deck.length) finish();
+    }, 180);
   }
+
+  const points = (r: { grade: Grade }[]) => r.reduce((s, x) => s + (x.grade === 'known' ? 1 : x.grade === 'partial' ? 0.5 : 0), 0);
+  const fmt = (n: number) => String(n).replace('.', ',');
 
   function finish() {
     haptic.success();
     if (isRetry) return;
-    const result = { at: Date.now(), score: deck.length - missed.length, total: deck.length };
+    const result = { at: Date.now(), score: points(results), total: deck.length };
     const target = kind === 'content' && id ? getContent(id) : kind === 'trajet' && id ? getPalace(id) : undefined;
     if (target) {
       recordQuiz(target, result);
       nextDue = target.review?.due ?? null;
+      void syncReminders();
     }
   }
 
-  function retryMissed() {
-    deck = ordered(missed, order === 'random' ? 'random' : 'forward');
-    missed = [];
+  const toReview = $derived(results.filter((r) => r.grade !== 'known'));
+  const sharedMisses = $derived(
+    content ? toReview.map((r) => ({ ...r, others: neighbours(content, r.card.key) })).filter((r) => r.others.length) : [],
+  );
+
+  function retry() {
+    deck = ordered(
+      toReview.map((r) => r.card),
+      order === 'random' ? 'random' : 'forward',
+    );
+    results = [];
     index = 0;
-    shown = false;
+    phase = 'ask';
     isRetry = true;
   }
 
   function restart() {
     deck = ordered(built.cards, order);
-    missed = [];
+    results = [];
     index = 0;
-    shown = false;
+    phase = 'ask';
     isRetry = false;
   }
 
-  function onKey(e: KeyboardEvent) {
-    if (done) return;
-    if (!shown && (e.key === ' ' || e.key === 'Enter')) reveal();
-    else if (shown && e.key === 'ArrowRight') answer(true);
-    else if (shown && e.key === 'ArrowLeft') answer(false);
+  /* ---------- Proposer le rappel ---------- */
+  // svelte-ignore state_referenced_locally
+  let showReminderOffer = $state(
+    isNative() && kind !== 'numbers' && !db.settings.reminder?.enabled && !db.settings.reminderAsked,
+  );
+
+  async function enableReminder() {
+    db.settings.reminderAsked = true;
+    showReminderOffer = false;
+    if (await askNotificationPermission()) {
+      db.settings.reminder = { enabled: true, time: db.settings.reminder?.time ?? DEFAULT_TIME };
+      await syncReminders();
+      toast('Rappel activé à 19 h les jours de révision');
+    } else {
+      toast('Notifications refusées : tu pourras les activer dans Réglages.');
+    }
   }
+
+  function onKey(e: KeyboardEvent) {
+    if (done || phase === 'typing') return;
+    if (phase === 'ask' && (e.key === ' ' || e.key === 'Enter')) reveal();
+    else if (phase === 'shown' && e.key === 'ArrowRight') grade('known');
+    else if (phase === 'shown' && e.key === 'ArrowLeft') grade('missed');
+  }
+
+  $effect(() => () => session?.stop());
 </script>
 
 <svelte:window onkeydown={onKey} />
@@ -191,45 +281,86 @@
       <p class="title-m" style="color: var(--on)">Rien à tester pour l'instant</p>
     </div>
   {:else if done}
-    {@const score = deck.length - missed.length}
+    {@const score = points(results)}
     {@const perfect = score === deck.length}
     <div class="result">
       <div class="medal" class:perfect><Icon name={perfect ? 'trophy' : 'refresh'} size={36} /></div>
-      <p class="headline-l">{score} / {deck.length}</p>
+      <p class="headline-l">{fmt(score)} / {deck.length}</p>
       <p class="body-l onv">
-        {perfect ? 'Parfait, ce palais est solide.' : score / deck.length >= 0.6 ? 'Pas mal. Revois les ratés.' : 'À retravailler, revois les ratés.'}
+        {perfect ? 'Parfait, ce palais est solide.' : score / deck.length >= 0.6 ? 'Pas mal. Revois ceux qui ont coincé.' : 'À retravailler. Revois ceux qui ont coincé.'}
       </p>
       {#if nextDue !== null}
         <p class="chip plain next"><Icon name="calendar" size={18} />Prochaine révision {dueLabel(nextDue)}</p>
       {/if}
     </div>
 
-    {#if missed.length}
+    {#if showReminderOffer && !isRetry}
+      <div class="card-tonal offer">
+        <p class="title-m">Un rappel le jour où réviser ?</p>
+        <p class="body-m" style="opacity: 0.85">
+          Une notification à 19 h, seulement les jours où un palais est à revoir. Rien les autres jours.
+        </p>
+        <div class="row" style="margin-top: 10px; gap: 4px">
+          <button class="btn filled" onclick={enableReminder}>Activer</button>
+          <button
+            class="btn text"
+            onclick={() => {
+              db.settings.reminderAsked = true;
+              showReminderOffer = false;
+            }}>Non merci</button
+          >
+        </div>
+      </div>
+    {/if}
+
+    {#if sharedMisses.length}
+      {@const names = [...new Set(sharedMisses.flatMap((r) => r.others.map((o) => o.content.title)))]}
+      <div class="card-warn warn">
+        <Icon name="layers" />
+        <div class="grow">
+          <p class="title-m">Possible mélange avec « {names.join(' », « ')} »</p>
+          <p class="body-m">
+            {sharedMisses.length} des loci qui ont coincé portent aussi un autre contenu. Archive l'ancien ou déplace celui-ci
+            dans un palais libre.
+          </p>
+          {#if content}
+            <button class="btn text warn-btn" onclick={() => nav.replace({ name: 'content', id: content.id })}>Régler ça</button>
+          {/if}
+        </div>
+      </div>
+    {/if}
+
+    {#if toReview.length}
       <h2 class="subheader">À revoir</h2>
-      {#each missed as m, i (m.key)}
+      {#each toReview as r, i (r.card.key)}
+        {@const others = content ? neighbours(content, r.card.key) : []}
         {#if i > 0}<div class="divider" style="margin-left: 16px"></div>{/if}
         <div class="list-item two">
           <span class="li-text">
-            <span class="li-over">{m.chips.join(' · ')} · {m.prompt}</span>
-            <span class="li-head" style="font-weight: 500">{m.answer}</span>
-            {#if m.extra}<span class="li-sup">{m.extra}</span>{/if}
+            <span class="li-over">{r.card.chips.join(' · ')} · {r.card.prompt}{r.grade === 'partial' ? ' · à moitié' : ''}</span>
+            <span class="li-head" style="font-weight: 500">{r.card.answer}</span>
+            {#if r.card.extra}<span class="li-sup">{r.card.extra}</span>{/if}
+            {#if others.length}
+              <span class="also"><Icon name="layers" size={14} />Aussi ici : {others.map((o) => `${o.text} (${o.content.title})`).join(', ')}</span>
+            {/if}
           </span>
         </div>
       {/each}
     {/if}
 
     <div class="stack px" style="margin-top: 24px">
-      {#if missed.length}
-        <button class="btn filled lg block" onclick={retryMissed}>Refaire les {missed.length} ratés</button>
+      {#if toReview.length}
+        <button class="btn filled lg block" onclick={retry}>Refaire les {toReview.length} à revoir</button>
       {/if}
       <button class="btn outlined lg block" onclick={restart}>Recommencer</button>
       <button class="btn text lg block" onclick={() => nav.back()}>Fermer</button>
     </div>
   {:else if card}
+    {@const speaking = recite && kind !== 'numbers'}
     <div class="px"><div class="progress"><span style:width="{(index / deck.length) * 100}%"></span></div></div>
 
     <div class="stage">
-      {#key card.key}
+      {#key card.key + index}
         <div
           class="card"
           class:dragging
@@ -249,7 +380,7 @@
           onkeydown={() => {}}
         >
           <div aria-hidden="true" class="tint good" style:opacity={dx > 0 ? Math.min(dx / THRESHOLD, 1) : 0}>
-            <Icon name="check" />Je savais
+            <Icon name="check" />Su
           </div>
           <div aria-hidden="true" class="tint bad" style:opacity={dx < 0 ? Math.min(-dx / THRESHOLD, 1) : 0}>
             <Icon name="x" />Raté
@@ -263,28 +394,87 @@
           <p class="prompt">{card.prompt}</p>
           {#if card.sub}<p class="body-l onv">{card.sub}</p>{/if}
 
-          {#if shown}
+          {#if phase === 'shown'}
             <div class="answer">
+              {#if said}
+                <p class="label-m onv">TU AS DIT</p>
+                <p class="body-l said">« {said} »</p>
+              {/if}
               <p class="label-m primary">RÉPONSE</p>
-              <p class="answer-text">{card.answer}</p>
+              <p class="answer-text">
+                {#if match}
+                  {#each match.words as w, wi (wi)}<span class:hit={w.key && w.found} class:miss={w.key && !w.found}>{w.text}</span>{' '}{/each}
+                {:else}
+                  {card.answer}
+                {/if}
+              </p>
               {#if card.extra}<p class="body-m onv">{card.extra}</p>{/if}
+              {#if match}
+                <p class="label-l score" class:good={match.grade === 'known'}>
+                  {match.found} mot{match.found > 1 ? 's' : ''} clé{match.found > 1 ? 's' : ''} sur {match.total} retrouvé{match.found > 1 ? 's' : ''}
+                </p>
+              {/if}
             </div>
-          {:else}
+          {:else if phase === 'listening'}
+            <div class="listening">
+              <span class="mic-pulse"><Icon name="mic" size={28} /></span>
+              <p class="body-l live">{transcript || 'Je t’écoute…'}</p>
+            </div>
+          {:else if phase === 'typing'}
+            <form
+              class="typing"
+              onsubmit={(e) => {
+                e.preventDefault();
+                finishAttempt(typed.trim() ? [typed] : []);
+              }}
+            >
+              <label class="tf" style="margin: 0">
+                <span>Ta réponse</span>
+                <input bind:this={typeInput} bind:value={typed} enterkeyhint="done" autocomplete="off" />
+              </label>
+            </form>
+          {:else if !speaking}
             <p class="reveal label-l onv"><Icon name="eye" size={18} />Toucher pour révéler</p>
+          {:else}
+            <p class="reveal label-l onv">
+              <Icon name={canSpeak ? 'mic' : 'pencil'} size={18} />{canSpeak ? 'Dis ta réponse à voix haute' : 'Écris ta réponse avant de regarder'}
+            </p>
           {/if}
         </div>
       {/key}
     </div>
 
     <div class="actions px">
-      {#if shown}
-        <button class="btn danger lg grow has-icon" onclick={() => fly(-1)}><Icon name="x" size={20} />Raté</button>
-        <button class="btn filled lg grow has-icon" onclick={() => fly(1)}><Icon name="check" size={20} />Je savais</button>
+      {#if phase === 'shown'}
+        {@const suggested = match?.grade}
+        <button class="btn lg grow" class:danger={suggested === 'missed' || !suggested} class:outlined={suggested && suggested !== 'missed'} onclick={() => grade('missed')}>
+          Raté
+        </button>
+        <button class="btn lg grow" class:filled={suggested === 'partial'} class:tonal={suggested !== 'partial'} onclick={() => grade('partial')}>
+          À moitié
+        </button>
+        <button class="btn lg grow" class:filled={suggested === 'known' || !suggested} class:outlined={suggested && suggested !== 'known'} onclick={() => grade('known')}>
+          Su
+        </button>
+      {:else if phase === 'listening'}
+        <button class="btn filled lg grow has-icon" onclick={stopListening}><Icon name="check" size={20} />J'ai fini</button>
+      {:else if phase === 'typing'}
+        <button class="btn text lg" onclick={reveal}>Je ne sais pas</button>
+        <button class="btn filled lg grow" onclick={() => finishAttempt(typed.trim() ? [typed] : [])}>Valider</button>
+      {:else if speaking && canSpeak}
+        <button class="btn tonal lg has-icon" onclick={startTyping} aria-label="Écrire"><Icon name="pencil" size={20} /></button>
+        <button class="btn filled lg grow has-icon mic-btn" onclick={startListening}><Icon name="mic" size={22} />Réciter</button>
+        <button class="btn tonal lg" onclick={reveal}>Révéler</button>
+      {:else if speaking}
+        <button class="btn tonal lg" onclick={reveal}>Révéler</button>
+        <button class="btn filled lg grow has-icon" onclick={startTyping}><Icon name="pencil" size={20} />Écrire ma réponse</button>
       {:else}
         <button class="btn tonal lg grow" onclick={reveal}>Révéler</button>
       {/if}
     </div>
-    {#if shown}<p class="label-m onv swipe-hint">Ou glisse la carte : → je savais, ← raté</p>{/if}
+    {#if phase === 'shown'}
+      <p class="label-m onv hint">{match ? 'Note suggérée selon ta réponse. ' : ''}Ou glisse la carte : → su, ← raté</p>
+    {/if}
   {/if}
 </div>
 
@@ -309,7 +499,6 @@
     touch-action: pan-y;
     transition: transform 0.25s var(--ease);
     animation: deal 0.3s var(--ease);
-    cursor: pointer;
     overflow: hidden;
   }
 
@@ -367,15 +556,87 @@
     border-radius: 20px;
     padding: 16px 20px;
     animation: deal 0.25s var(--ease);
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .said {
+    font-style: italic;
+    margin-bottom: 10px;
+    overflow-wrap: anywhere;
   }
 
   .answer-text {
     font-size: 30px;
-    line-height: 38px;
+    line-height: 40px;
     font-weight: 500;
     color: var(--p);
     white-space: pre-wrap;
     overflow-wrap: anywhere;
+  }
+
+  .answer-text .hit {
+    background: var(--pc);
+    color: var(--onpc);
+    border-radius: 8px;
+    padding: 0 4px;
+  }
+
+  .answer-text .miss {
+    text-decoration: underline wavy var(--error);
+    text-underline-offset: 6px;
+    text-decoration-thickness: 2px;
+  }
+
+  .score {
+    margin-top: 8px;
+    color: var(--warn);
+  }
+
+  .score.good {
+    color: var(--p);
+  }
+
+  .listening {
+    margin-top: auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+    text-align: center;
+  }
+
+  .mic-pulse {
+    width: 72px;
+    height: 72px;
+    border-radius: 50%;
+    background: var(--p);
+    color: var(--onp);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    animation: pulse 1.4s ease-in-out infinite;
+  }
+
+  @keyframes pulse {
+    0%,
+    100% {
+      box-shadow: 0 0 0 0 color-mix(in srgb, var(--p) 45%, transparent);
+    }
+    50% {
+      box-shadow: 0 0 0 18px color-mix(in srgb, var(--p) 0%, transparent);
+    }
+  }
+
+  .live {
+    min-height: 48px;
+    color: var(--onv);
+    font-style: italic;
+  }
+
+  .typing {
+    margin-top: auto;
   }
 
   .reveal {
@@ -388,12 +649,21 @@
 
   .actions {
     display: flex;
-    gap: 12px;
+    gap: 8px;
   }
 
-  .swipe-hint {
+  .actions .btn {
+    padding: 0 16px;
+  }
+
+  .mic-btn {
+    font-size: 17px;
+  }
+
+  .hint {
     text-align: center;
     margin-top: 12px;
+    padding: 0 16px;
   }
 
   .result {
@@ -425,5 +695,31 @@
   .next {
     margin-top: 8px;
     padding-left: 12px;
+  }
+
+  .offer {
+    margin: 16px 16px 0;
+  }
+
+  .warn {
+    margin: 16px 16px 0;
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+  }
+
+  .warn-btn {
+    color: var(--onwarn-c);
+    margin: 6px 0 -8px -12px;
+    font-weight: 600;
+  }
+
+  .also {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 13px;
+    color: var(--warn);
+    margin-top: 2px;
   }
 </style>

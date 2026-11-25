@@ -38,6 +38,13 @@
     trophy: 'M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0zM17 5h3v2a3 3 0 0 1-3 3M7 5H4v2a3 3 0 0 0 3 3',
     folder: 'M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z',
     calendar: 'M4 6h16v15H4zM4 10h16M8 3v4M16 3v4',
+    mic: 'M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zM19 11a7 7 0 0 1-14 0M12 18v3',
+    bell: 'M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.94 1.94 0 0 0 3.4 0',
+    archive: 'M3 4h18v4H3zM5 8v12h14V8M10 12h4',
+    move: 'M8 3 4 7l4 4M4 7h16M16 21l4-4-4-4M20 17H4',
+    key: 'M2.5 21.5l8.3-8.3M15 13a5 5 0 1 0 0-10 5 5 0 0 0 0 10zM6 17l2 2M8 15l2 2',
+    alert: 'M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0zM12 9v4M12 17h.01',
+    check2: 'M22 11.1V12a10 10 0 1 1-5.9-9.1M22 4 12 14l-3-3',
   } as const;
 
   export type IconName = keyof typeof ICONS;

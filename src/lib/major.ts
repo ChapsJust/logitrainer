@@ -53,3 +53,18 @@ export function majorHint(key: string): string {
     .map((d) => MAJOR[d]?.split(',')[0]?.trim() ?? '')
     .join(' + ');
 }
+
+/** Découpe les nombres d'un texte en paires (« 1867 » → 18, 67). Chiffre seul → « 0X ». */
+export function numberPairs(text: string): { raw: string; pairs: string[] }[] {
+  const groups = text.match(/\d+/g) ?? [];
+  return groups
+    .filter((g) => g.length <= 12)
+    .map((g) => {
+      const pairs: string[] = [];
+      for (let i = 0; i < g.length; i += 2) {
+        const p = g.slice(i, i + 2);
+        pairs.push(p.length === 1 ? '0' + p : p);
+      }
+      return { raw: g, pairs };
+    });
+}

@@ -46,6 +46,7 @@ export function parseData(json: string): Data {
       updatedAt: c.updatedAt ?? Date.now(),
       lastQuiz: c.lastQuiz,
       review: c.review,
+      archived: c.archived,
     })),
     numbers: raw.numbers ?? {},
     settings: { ...base.settings, ...(raw.settings ?? {}) },
@@ -244,6 +245,40 @@ export function setItem(c: Content, locusId: string, item: ContentItem): void {
   if (!item.text.trim() && !item.image.trim()) delete c.items[locusId];
   else c.items[locusId] = { text: item.text.trim(), image: item.image.trim() };
   touch(c);
+}
+
+/** Contenus non archivés d'un palais. */
+export function activeContentsOf(palaceId: string): Content[] {
+  return db.contents.filter((c) => c.palaceId === palaceId && !c.archived);
+}
+
+export function setArchived(c: Content, archived: boolean): void {
+  c.archived = archived;
+  touch(c);
+}
+
+/**
+ * Déplace un contenu vers un autre palais en gardant l'ordre : l'élément du locus n° k
+ * va sur le locus n° k du palais cible. Retourne le nombre d'éléments sans place.
+ */
+export function moveContentToPalace(c: Content, target: Palace): number {
+  const src = getPalace(c.palaceId);
+  if (!src || src.id === target.id) return 0;
+  const from = flatLoci(src);
+  const to = flatLoci(target);
+  const items: Content['items'] = {};
+  let lost = 0;
+  from.forEach((f, i) => {
+    const item = c.items[f.locus.id];
+    if (!item) return;
+    const dest = to[i];
+    if (dest) items[dest.locus.id] = item;
+    else lost++;
+  });
+  c.items = items;
+  c.palaceId = target.id;
+  touch(c);
+  return lost;
 }
 
 export function filledCount(c: Content, p: Palace): number {

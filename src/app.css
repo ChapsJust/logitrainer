@@ -35,6 +35,11 @@
   --onav3: #2e1500;
   --av4: #e6deff;
   --onav4: #1d1736;
+  --warn: #8b5000;
+  --warn-c: #ffddb3;
+  --onwarn-c: #2a1800;
+  --ok-c: #c9ecd9;
+  --onok-c: #00210f;
   --elev1: 0 1px 2px rgb(0 0 0 / 0.15), 0 1px 3px 1px rgb(0 0 0 / 0.08);
   --elev3: 0 4px 8px 3px rgb(0 0 0 / 0.12), 0 1px 3px rgb(0 0 0 / 0.2);
 }
@@ -71,6 +76,11 @@
   --onav3: #ffdcc2;
   --av4: #4a4166;
   --onav4: #e6deff;
+  --warn: #ffb95c;
+  --warn-c: #653e00;
+  --onwarn-c: #ffddb3;
+  --ok-c: #1e4d36;
+  --onok-c: #c9ecd9;
   --elev1: 0 1px 2px rgb(0 0 0 / 0.3), 0 1px 3px 1px rgb(0 0 0 / 0.15);
   --elev3: 0 4px 8px 3px rgb(0 0 0 / 0.15), 0 1px 3px rgb(0 0 0 / 0.3);
 }
@@ -676,4 +686,44 @@ p {
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+/* ---------- Pastilles d'état ---------- */
+
+.spill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.spill.free {
+  background: var(--ok-c);
+  color: var(--onok-c);
+}
+.spill.used {
+  background: var(--surface-highest);
+  color: var(--onv);
+}
+.spill.mixed {
+  background: var(--warn-c);
+  color: var(--onwarn-c);
+}
+.card-warn {
+  background: var(--warn-c);
+  color: var(--onwarn-c);
+  border-radius: 16px;
+  padding: 16px;
+}
+.card-ok {
+  background: var(--ok-c);
+  color: var(--onok-c);
+  border-radius: 16px;
+  padding: 16px;
 }

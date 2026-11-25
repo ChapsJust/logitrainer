@@ -10,6 +10,10 @@
   import { app, toast } from '../app.svelte';
   import { formatDate, isNative, relativeDays } from '../util';
   import type { Theme } from '../types';
+  import Switch from '../components/Switch.svelte';
+  import AiKeySheet from '../components/AiKeySheet.svelte';
+  import { aiState } from '../ai-key.svelte';
+  import { askNotificationPermission, DEFAULT_TIME, syncReminders } from '../reminders';
 
   const themes: { id: Theme; label: string }[] = [
     { id: 'auto', label: 'Auto' },
@@ -23,6 +27,27 @@
   let checking = $state(false);
   let guideOpen = $state(false);
   const native = isNative();
+  let aiOpen = $state(false);
+  let reminderOn = $state(!!db.settings.reminder?.enabled);
+  let reminderTime = $state(db.settings.reminder?.time ?? DEFAULT_TIME);
+
+  async function toggleReminder(on: boolean) {
+    if (on && !(await askNotificationPermission())) {
+      reminderOn = false;
+      toast('Autorise les notifications de Logidex dans les réglages Android.');
+      return;
+    }
+    db.settings.reminder = { enabled: on, time: reminderTime };
+    db.settings.reminderAsked = true;
+    await syncReminders();
+    if (on) toast(`Rappel à ${reminderTime.replace(':', ' h ')} les jours de révision`);
+  }
+
+  async function changeTime() {
+    if (!/^\d{2}:\d{2}$/.test(reminderTime)) return;
+    db.settings.reminder = { enabled: reminderOn, time: reminderTime };
+    await syncReminders();
+  }
 
   async function doExport() {
     try {
@@ -83,6 +108,35 @@
       </button>
     {/each}
   </div>
+
+  {#if native}
+    <h2 class="subheader">Rappel</h2>
+    <div class="list-item two">
+      <span class="num"><Icon name="bell" size={20} /></span>
+      <span class="li-text">
+        <span class="li-head">Rappel de révision</span>
+        <span class="li-sup">Seulement les jours où un palais ou un contenu est à revoir</span>
+      </span>
+      <Switch bind:checked={reminderOn} label="Rappel de révision" onchange={toggleReminder} />
+    </div>
+    {#if reminderOn}
+      <label class="list-item">
+        <span class="num"><Icon name="clock" size={20} /></span>
+        <span class="li-text"><span class="li-head">Heure du rappel</span></span>
+        <input class="time" type="time" bind:value={reminderTime} onchange={changeTime} />
+      </label>
+    {/if}
+  {/if}
+
+  <h2 class="subheader">Assistant d'images</h2>
+  <button class="list-item two" onclick={() => (aiOpen = true)}>
+    <span class="num"><Icon name="sparkle" size={20} /></span>
+    <span class="li-text">
+      <span class="li-head">Suggestions par Claude</span>
+      <span class="li-sup">{aiState.hasKey ? 'Activé avec ta clé API' : 'Facultatif · avec ta propre clé API'}</span>
+    </span>
+    {#if aiState.hasKey}<span class="spill free">Activé</span>{/if}
+  </button>
 
   <h2 class="subheader">Sauvegarde</h2>
   {#if native}
@@ -158,6 +212,8 @@
   <p class="label-m onv footer">Logidex {APP_VERSION} · données stockées sur ce téléphone</p>
 </div>
 
+<AiKeySheet bind:open={aiOpen} />
+
 <Sheet bind:open={guideOpen} title="La méthode des loci">
   <ol class="guide body-m">
     <li><b>Choisis un lieu que tu connais par cœur</b> : ta maison, ton école, un trajet quotidien.</li>
@@ -178,6 +234,15 @@
 />
 
 <style>
+  .time {
+    border: 1px solid var(--outline);
+    border-radius: 8px;
+    background: transparent;
+    padding: 6px 10px;
+    font-size: 16px;
+    color: var(--on);
+  }
+
   .err {
     color: var(--error);
   }

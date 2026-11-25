@@ -3,7 +3,22 @@
   import Sheet from '../components/Sheet.svelte';
   import Icon from '../components/Icon.svelte';
   import QuizStart from '../components/QuizStart.svelte';
-  import { deleteContent, filledCount, getContent, getPalace, pasteList, setItem, touch } from '../store.svelte';
+  import ImageWorkshop from '../components/ImageWorkshop.svelte';
+  import Avatar from '../components/Avatar.svelte';
+  import {
+    db,
+    deleteContent,
+    filledCount,
+    getContent,
+    getPalace,
+    moveContentToPalace,
+    pasteList,
+    setArchived,
+    setItem,
+    touch,
+  } from '../store.svelte';
+  import { OCCUPANCY_LABEL, neighbours, overlaps, palaceUse } from '../interference';
+  import { lociCount, plural } from '../util';
   import { nav } from '../nav.svelte';
   import { flatLoci } from '../util';
   import { toast, withUndo } from '../app.svelte';
@@ -18,6 +33,30 @@
   const showRooms = $derived(!!palace && (palace.rooms.length > 1 || !!palace.rooms[0]?.name));
   const filled = $derived(content && palace ? filledCount(content, palace) : 0);
   const due = $derived(content ? contentDue(content, palace) : null);
+  const ov = $derived(content ? overlaps(content) : []);
+
+  let moveOpen = $state(false);
+  /** Position du dernier locus rempli (1 = premier). */
+  const lastFilled = $derived(
+    content ? flat.reduce((acc, f, i) => (content.items[f.locus.id]?.text ? i + 1 : acc), 0) : 0,
+  );
+
+  function move(targetId: string) {
+    const target = getPalace(targetId);
+    if (!content || !target) return;
+    moveOpen = false;
+    editInfo = false;
+    withUndo(`Déplacé dans « ${target.name} »`, () => {
+      const lost = moveContentToPalace(content, target);
+      if (lost) setTimeout(() => toast(`${lost} élément(s) sans locus : ajoute des loci à « ${target.name} »`), 5200);
+    });
+  }
+
+  function archiveOther(otherId: string) {
+    const other = getContent(otherId);
+    if (!other) return;
+    withUndo(`« ${other.title} » archivé`, () => setArchived(other, true));
+  }
 
   let hide = $state(false);
   let revealed = $state<Record<string, boolean>>({});
@@ -128,6 +167,34 @@
     </p>
     {#if content.notes}<p class="body-m page-sub notes">{content.notes}</p>{/if}
 
+    {#if content.archived}
+      <div class="banner card-filled">
+        <Icon name="archive" class="onv" />
+        <span class="body-m grow">Archivé : ne compte plus dans l'occupation du palais ni dans les révisions.</span>
+        <button class="btn text" onclick={() => setArchived(content, false)}>Réactiver</button>
+      </div>
+    {:else if ov.length}
+      <div class="banner card-warn col">
+        <div class="row" style="align-items: flex-start; gap: 12px">
+          <Icon name="alert" />
+          <span class="grow">
+            <span class="title-m">Mélange possible</span>
+            <span class="body-m">
+              {#each ov as o, i (o.content.id)}{i ? ' et ' : ''}Partage {plural(o.count, 'locus', 'loci')} avec « {o.content.title} »{/each}.
+              Les loci concernés sont marqués en orange.
+            </span>
+          </span>
+        </div>
+        <div class="row actions-warn">
+          <button class="btn filled has-icon" onclick={() => (moveOpen = true)}><Icon name="move" size={18} />Déplacer celui-ci</button>
+          {#if ov.length === 1 && ov[0]}
+            {@const other = ov[0].content}
+            <button class="btn text" onclick={() => archiveOther(other.id)}>Archiver « {other.title} »</button>
+          {/if}
+        </div>
+      </div>
+    {/if}
+
     {#if flat.length === 0}
       <div class="empty">
         <div class="art"><Icon name="door" size={32} /></div>
@@ -168,8 +235,9 @@
         {:else}
           <div style="height: 8px"></div>
         {/if}
+        {@const others = item?.text && !content.archived ? neighbours(content, f.locus.id) : []}
         <button class="list-item two" onclick={() => tapRow(i, f.locus.id)}>
-          <span class="num" class:dashed={!item?.text}>{f.n}</span>
+          <span class="num" class:dashed={!item?.text} class:shared={others.length > 0}>{f.n}</span>
           <span class="li-text">
             <span class="li-over ellipsis">{f.locus.name}</span>
             {#if item?.text}
@@ -178,6 +246,9 @@
               {:else}
                 <span class="value">{item.text}</span>
                 {#if item.image}<span class="li-sup">{item.image}</span>{/if}
+                {#if others.length}
+                  <span class="also"><Icon name="layers" size={14} />Aussi ici : {others.map((o) => o.text).join(', ')}</span>
+                {/if}
               {/if}
             {:else}
               <span class="li-sup">Toucher pour ajouter</span>
@@ -203,6 +274,15 @@
         <textarea bind:value={draftImage} rows="2" placeholder="Ex. un dirigeable explose contre la porte"></textarea>
       </label>
       <p class="helper">Fais interagir l'élément avec le lieu : mouvement, son, exagération.</p>
+      <ImageWorkshop
+        element={draftText}
+        bind:image={draftImage}
+        locusId={editing.locus.id}
+        locus={editing.locus.name}
+        locusDescription={editing.locus.description}
+        room={editing.room.name}
+        contentTitle={content.title}
+      />
     {/if}
     {#snippet footer()}
       <button class="btn outlined has-icon" disabled={editIndex <= 0} onclick={() => go(-1)}>
@@ -254,6 +334,29 @@
       <span>Notes (facultatif)</span>
       <textarea bind:value={content.notes} rows="2" placeholder="Source, contexte, date d'apprentissage…"></textarea>
     </label>
+    <div class="menu">
+      <button class="list-item" onclick={() => (moveOpen = true)}>
+        <span class="num"><Icon name="move" size={20} /></span>
+        <span class="li-text">
+          <span class="li-head">Déplacer vers un autre palais</span>
+          <span class="li-sup">Chaque élément garde sa position</span>
+        </span>
+      </button>
+      <button
+        class="list-item"
+        onclick={() => {
+          editInfo = false;
+          if (content.archived) setArchived(content, false);
+          else withUndo('Contenu archivé', () => setArchived(content, true));
+        }}
+      >
+        <span class="num"><Icon name="archive" size={20} /></span>
+        <span class="li-text">
+          <span class="li-head">{content.archived ? 'Réactiver' : 'Archiver'}</span>
+          <span class="li-sup">{content.archived ? 'Il compte à nouveau dans le palais' : "Tu n'as plus besoin de le retenir : il libère le palais"}</span>
+        </span>
+      </button>
+    </div>
     {#snippet footer()}
       <button
         class="btn text danger-text"
@@ -267,6 +370,31 @@
       <span class="grow"></span>
       <button class="btn filled" onclick={() => (editInfo = false)}>OK</button>
     {/snippet}
+  </Sheet>
+
+  <!-- Déplacer -->
+  <Sheet bind:open={moveOpen} title="Déplacer vers…">
+    <p class="body-m onv" style="margin-bottom: 8px">
+      L'élément du locus 1 va sur le locus 1 du nouveau palais, et ainsi de suite. Choisis de préférence un palais libre.
+    </p>
+    <div class="moves">
+      {#each db.palaces.filter((p) => p.id !== palace.id) as p (p.id)}
+        {@const u = palaceUse(p)}
+        {@const missing = Math.max(0, lastFilled - lociCount(p))}
+        <button class="list-item two" onclick={() => move(p.id)}>
+          <Avatar id={p.id} name={p.name} size={40} />
+          <span class="li-text">
+            <span class="li-head ellipsis">{p.name}</span>
+            <span class="li-sup" class:warn-text={missing > 0}>
+              {plural(lociCount(p), 'locus', 'loci')}{missing ? ` · il en manque ${missing}` : ''}
+            </span>
+          </span>
+          <span class="spill {u.state}">{OCCUPANCY_LABEL[u.state]}</span>
+        </button>
+      {:else}
+        <p class="body-m onv">Crée d'abord un autre palais.</p>
+      {/each}
+    </div>
   </Sheet>
 
   <QuizStart
@@ -288,6 +416,64 @@
     font-weight: 500;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
+  }
+
+  .banner {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 12px 16px 0;
+  }
+
+  .banner.col {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .banner .grow {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .actions-warn {
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 10px;
+    padding-left: 36px;
+  }
+
+  .actions-warn .btn.text {
+    color: var(--onwarn-c);
+  }
+
+  .num.shared {
+    background: var(--warn-c);
+    color: var(--onwarn-c);
+    box-shadow: 0 0 0 2px var(--warn);
+  }
+
+  .also {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 13px;
+    color: var(--warn);
+    margin-top: 2px;
+  }
+
+  .warn-text {
+    color: var(--warn);
+  }
+
+  .menu,
+  .moves {
+    margin: 0 -24px;
+  }
+
+  .menu .list-item,
+  .moves .list-item {
+    padding-left: 24px;
+    padding-right: 24px;
   }
 
   .masked {

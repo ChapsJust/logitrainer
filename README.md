@@ -6,7 +6,10 @@ Ton aide-mémoire de **palais mentaux** (méthode des loci), en app Android.
 - **Contenus** : ce que tu déposes dans un palais (une liste, un discours, des dates…). Un même palais peut porter plusieurs contenus ; chaque élément reste accroché à son locus.
 - **Promenade** : parcours ton palais en plein écran, un locus à la fois, en glissant.
 - **Révision espacée** : après chaque test, Logidex calcule la prochaine révision (1 j, 3 j, 1 sem., 2 sem., 1 mois…). L'accueil affiche ce qui est « À revoir aujourd'hui ».
-- **Tester** : trajet, contenu ou nombres, dans l'ordre, à rebours ou au hasard. Glisse la carte : → je savais, ← raté.
+- **Tester en récitant** : dis ta réponse à voix haute (ou écris-la) avant de la voir ; Logidex la compare à la bonne réponse (accents, pluriels et petites erreurs de dictée tolérés) et suggère la note : Su, À moitié ou Raté. Glisse la carte : → su, ← raté.
+- **Anti-mélange** : chaque palais affiche s'il est *Libre*, *Occupé* ou en *Mélange* (deux contenus actifs sur les mêmes loci). Les loci partagés sont marqués en orange, Logidex propose un palais libre à la création d'un contenu, et tu peux **archiver** un contenu ou le **déplacer** vers un autre palais.
+- **Atelier d'images** : les nombres d'un élément (« 1789 ») sont découpés et reliés à tes images 00–99 ; en option, Claude propose 3 images mentales qui font interagir l'élément avec le locus (avec ta propre clé API, gardée sur le téléphone).
+- **Rappel quotidien** : une notification à l'heure choisie, seulement les jours où quelque chose est à revoir, avec la liste réelle.
 - **Nombres** : ton système d'images de 00 à 99 (système majeur, avec aide).
 - **Filet de sécurité** : sauvegarde automatique quotidienne dans `Documents/Logidex` (survit à une désinstallation), « Annuler » après chaque suppression, export/import.
 - Design Material 3 clair/sombre, vibrations, transitions, accueil guidé à la première ouverture.
@@ -107,6 +110,11 @@ src/
 android/                projet Android généré par Capacitor
 .github/workflows/      compilation + publication automatique de l'APK
 ```
+
+## Suggestions d'images (facultatif)
+
+Réglages → Assistant d'images → colle une clé API Anthropic (`sk-ant-…`, à créer sur console.anthropic.com).
+La clé reste dans les préférences de l'app (jamais dans les exports). Chaque demande envoie seulement l'élément, le nom et la description du locus, et tes images de nombres concernées. Modèle : Claude Opus 5.5 (effort bas, environ 1 ¢ par demande), avec repli automatique côté serveur si une demande est refusée.
 
 ## Sauvegarde
 

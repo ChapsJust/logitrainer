@@ -42,7 +42,7 @@ export function palaceDue(p: Palace): number | null {
 }
 
 export function contentDue(c: Content, p: Palace | undefined): number | null {
-  if (!p) return null;
+  if (!p || c.archived) return null;
   return dueDate(c, Object.values(c.items).some((i) => i.text));
 }
 
