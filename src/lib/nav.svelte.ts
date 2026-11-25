@@ -11,10 +11,14 @@ export type Route =
   | { name: 'content'; id: string; focus?: string }
   | { name: 'fill'; id: string; start?: number }
   | { name: 'numbers-create'; start: string }
-  | { name: 'quiz'; kind: QuizKind; id?: string; order: QuizOrder }
+  | { name: 'quiz'; kind: QuizKind; id?: string; order: QuizOrder; weakOnly?: boolean; session?: string[] }
+  | { name: 'recall'; kind: 'trajet' | 'content'; id: string }
+  | { name: 'lab' }
+  | { name: 'lab-run'; palaceId: string; perLocus: number; seconds: number }
+  | { name: 'lab-recall'; sessionId: string; delayed?: boolean }
   | { name: 'walk'; palaceId: string; contentId?: string };
 
-export type Tab = 'home' | 'search' | 'numbers' | 'settings';
+export type Tab = 'home' | 'search' | 'numbers' | 'lab' | 'settings';
 
 /** Sens de la dernière navigation, pour l'animation de transition. */
 export type NavDir = 'forward' | 'back' | 'tab';
@@ -81,6 +85,12 @@ class Nav {
 }
 
 export const nav = new Nav();
+
+/** Route d'un élément de la session « Tout réviser » (« c:<id> » contenu, « p:<id> » trajet). */
+export function sessionRoute(key: string, rest: string[]): Route {
+  const [k, id] = [key.slice(0, 1), key.slice(2)];
+  return { name: 'quiz', kind: k === 'c' ? 'content' : 'trajet', id, order: 'forward', session: rest };
+}
 
 /**
  * Les fenêtres (feuilles, dialogues) s'enregistrent ici pour que le bouton

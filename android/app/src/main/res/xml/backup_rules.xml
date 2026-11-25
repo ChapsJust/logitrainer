@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android ≤ 11 : tes palais sont sauvegardés, mais jamais la clé API (chiffrée par le Keystore, non transférable). -->
+<full-backup-content>
+    <exclude domain="sharedpref" path="WSSecureStorageSharedPreferences.xml" />
+    <exclude domain="sharedpref" path="CapacitorStorage.xml" />
+</full-backup-content>

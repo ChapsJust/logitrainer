@@ -10,7 +10,7 @@
   import { nav } from '../nav.svelte';
   import { flatLoci } from '../util';
   import { haptic } from '../haptics';
-  import { ensureMicPermission, listen, speechAvailable, type Listening } from '../speech';
+  import { ensureMicPermission, listenLong, speechAvailable, type Listening } from '../speech';
   import { toast } from '../app.svelte';
 
   let { id, start }: { id: string; start?: number } = $props();
@@ -31,6 +31,9 @@
   let index = $state(start ?? firstEmpty());
   let text = $state('');
   let image = $state('');
+  let more = $state<string[]>([]);
+  let question = $state('');
+  let showQuestion = $state(false);
   let dir = $state<1 | -1>(1);
   let input: HTMLTextAreaElement | undefined = $state();
   let extraName = $state('');
@@ -41,8 +44,12 @@
 
   function load(i: number) {
     const f = flat[i];
-    text = (f && content?.items[f.locus.id]?.text) || '';
-    image = (f && content?.items[f.locus.id]?.image) || '';
+    const it = f ? content?.items[f.locus.id] : undefined;
+    text = it?.text || '';
+    image = it?.image || '';
+    more = [...(it?.more ?? [])];
+    question = it?.question || '';
+    showQuestion = !!question;
   }
   // svelte-ignore state_referenced_locally
   load(index);
@@ -51,8 +58,14 @@
     const f = flat[index];
     if (!f || !content) return;
     const prev = content.items[f.locus.id];
-    if ((prev?.text ?? '') !== text.trim() || (prev?.image ?? '') !== image.trim()) {
-      setItem(content, f.locus.id, { text, image });
+    const cleanMore = more.map((m) => m.trim()).filter(Boolean);
+    if (
+      (prev?.text ?? '') !== text.trim() ||
+      (prev?.image ?? '') !== image.trim() ||
+      (prev?.question ?? '') !== question.trim() ||
+      JSON.stringify(prev?.more ?? []) !== JSON.stringify(cleanMore)
+    ) {
+      setItem(content, f.locus.id, { text, image, more: cleanMore, question });
     }
   }
 
@@ -92,7 +105,8 @@
     listening = true;
     haptic.medium();
     const before = text;
-    session = listen((t) => (text = before ? `${before} ${t}` : t));
+    // Écoute continue : les pauses ne coupent pas ; tu corriges ensuite le texte au besoin.
+    session = listenLong((t) => (text = before ? `${before} ${t}` : t));
     const alts = await session.done;
     session = null;
     listening = false;
@@ -173,6 +187,23 @@
             <textarea bind:this={input} bind:value={text} rows="1" onkeydown={onKey} enterkeyhint="next" autofocus
               placeholder={listening ? 'Je t’écoute…' : ''}></textarea>
           </label>
+          {#each more as _, mi (mi)}
+            <label class="tf extra">
+              <span>Élément {mi + 2}</span>
+              <span class="row">
+                <input class="grow" bind:value={more[mi]} enterkeyhint="next" onkeydown={(e) => {
+                  if (e.key === 'Enter') { e.preventDefault(); go(index + 1); }
+                }} />
+                <button class="icon-btn" style="width: 36px; height: 36px" onclick={() => more.splice(mi, 1)} aria-label="Retirer"><Icon name="x" size={18} /></button>
+              </span>
+            </label>
+          {/each}
+          {#if showQuestion}
+            <label class="tf">
+              <span>Question (facultatif) : le test la posera</span>
+              <input bind:value={question} placeholder="Ex. Formule du ratio de liquidité ?" />
+            </label>
+          {/if}
           <label class="tf">
             <span>Image mentale (facultatif)</span>
             <textarea bind:value={image} rows="2" placeholder="Fais interagir l'élément avec le lieu"></textarea>
@@ -180,8 +211,14 @@
           <div class="tools">
             {#if canSpeak}
               <button class="chip" class:selected={listening} onclick={dictate}>
-                <Icon name="mic" />{listening ? 'Terminer' : 'Dicter'}
+                <Icon name="mic" />{listening ? "J'ai fini" : 'Dicter'}
               </button>
+            {/if}
+            {#if more.length < 3}
+              <button class="chip" onclick={() => more.push('')}><Icon name="plus" />Élément</button>
+            {/if}
+            {#if !showQuestion}
+              <button class="chip" onclick={() => (showQuestion = true)}><Icon name="plus" />Question</button>
             {/if}
           </div>
           <ImageWorkshop
@@ -261,6 +298,11 @@
     display: flex;
     gap: 8px;
     margin: -4px 0 12px;
+    flex-wrap: wrap;
+  }
+
+  .extra input {
+    min-width: 0;
   }
 
   .next {

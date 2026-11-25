@@ -69,6 +69,13 @@ function same(expected: string, said: string): boolean {
   return pe.length >= 4 && lev(pe, ps) <= (len >= 8 ? 2 : 1);
 }
 
+/** Mots qui inversent le sens d'une phrase. */
+const NEG = new Set(['ne', 'n', 'pas', 'jamais', 'aucun', 'aucune', 'non', 'ni', 'sans', 'rien', 'nul', 'nulle']);
+
+function negated(words: string[]): boolean {
+  return words.some((w) => NEG.has(w));
+}
+
 export interface MatchResult {
   /** Mots attendus avec leur statut, dans l'ordre de la réponse. */
   words: { text: string; key: boolean; found: boolean }[];
@@ -77,6 +84,8 @@ export interface MatchResult {
   ratio: number;
   /** Suggestion de note. */
   grade: 'known' | 'partial' | 'missed';
+  /** Une négation est présente d'un côté et pas de l'autre : le sens est peut-être inversé. */
+  negation: boolean;
 }
 
 /** Mots « clés » attendus : sans les mots vides (sauf si la réponse n'est faite que de ça). */
@@ -109,11 +118,64 @@ export function compare(answer: string, attempts: string[]): MatchResult {
     });
   const total = keys.length || 1;
   const ratio = best.size / total;
-  return {
-    words,
-    found: best.size,
-    total,
-    ratio,
-    grade: ratio >= 0.8 ? 'known' : ratio >= 0.4 ? 'partial' : 'missed',
+  const expectedNeg = negated(tokens(answer));
+  const negation = attempts.length > 0 && attempts.every((a) => negated(tokens(a)) !== expectedNeg);
+  let grade: MatchResult['grade'] = ratio >= 0.8 ? 'known' : ratio >= 0.4 ? 'partial' : 'missed';
+  // Les bons mots avec le sens inverse (« n'augmente pas ») ne valent pas « Su ».
+  if (negation && grade === 'known') grade = 'partial';
+  return { words, found: best.size, total, ratio, grade, negation };
+}
+
+/** Plusieurs éléments sur un même locus : chacun est noté séparément. */
+export function compareParts(parts: string[], attempts: string[]): { results: MatchResult[]; found: number; grade: MatchResult['grade'] } {
+  const results = parts.map((p) => compare(p, attempts));
+  const found = results.filter((r) => r.grade === 'known').length;
+  const partialish = results.filter((r) => r.grade !== 'missed').length;
+  const grade: MatchResult['grade'] =
+    found === parts.length ? 'known' : partialish >= Math.ceil(parts.length / 2) ? 'partial' : 'missed';
+  return { results, found, grade };
+}
+
+export type RecallStatus = 'ok' | 'order' | 'missing';
+
+/**
+ * Rappel libre : la personne récite tout le palais d'un coup, sans indice.
+ * On cherche chaque élément attendu dans la récitation, dans l'ordre :
+ * « ok » = trouvé à sa place, « order » = trouvé mais pas dans l'ordre, « missing » = absent.
+ */
+export function freeRecall(expected: string[], said: string): RecallStatus[] {
+  const pool = tokens(said);
+  const used = new Set<number>();
+  let cursor = 0;
+  const find = (keys: string[], from: number): number => {
+    // Position du premier mot-clé trouvé à partir de `from` (les autres doivent suivre de près).
+    for (let i = from; i < pool.length; i++) {
+      if (used.has(i) || !same(keys[0]!, pool[i]!)) continue;
+      let ok = 1;
+      let j = i + 1;
+      for (const k of keys.slice(1)) {
+        const hit = pool.slice(j, j + 4).findIndex((w, d) => !used.has(j + d) && same(k, w));
+        if (hit >= 0) {
+          ok++;
+          j = j + hit + 1;
+        }
+      }
+      if (ok / keys.length >= 0.6) return i;
+    }
+    return -1;
   };
+  return expected.map((answer) => {
+    const keys = keywords(answer);
+    if (!keys.length) return 'missing';
+    let at = find(keys, cursor);
+    let status: RecallStatus = 'ok';
+    if (at < 0) {
+      at = find(keys, 0);
+      status = 'order';
+    }
+    if (at < 0) return 'missing';
+    for (let k = at; k < at + keys.length; k++) used.add(k);
+    if (status === 'ok') cursor = at + 1;
+    return status;
+  });
 }

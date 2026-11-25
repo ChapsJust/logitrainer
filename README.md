@@ -6,8 +6,12 @@ Ton aide-mémoire de **palais mentaux** (méthode des loci), en app Android.
 - **Contenus** : ce que tu déposes dans un palais (une liste, un discours, des dates…). Chaque élément reste accroché à son locus.
 - **Remplir pas à pas** : un locus à la fois en plein écran, Entrée = suivant, dictée, idées d'images. Ou **coller une liste** avec un aperçu complet (et création des loci manquants).
 - **Promenade** : parcours ton palais en plein écran, un locus à la fois, en glissant.
-- **Révision espacée** : après chaque test, Logidex calcule la prochaine révision (1 j, 3 j, 1 sem., 2 sem., 1 mois…). L'accueil affiche ce qui est « À revoir aujourd'hui ».
-- **Tester en récitant** : dis ta réponse à voix haute (ou écris-la) avant de la voir ; Logidex la compare à la bonne réponse (accents, pluriels et petites erreurs de dictée tolérés) et suggère la note : Su, À moitié ou Raté. Glisse la carte : → su, ← raté.
+- **Révision espacée** : après chaque test, Logidex calcule la prochaine révision (1 j, 3 j, 1 sem., 2 sem., 1 mois…). Un test fait avant la date prévue compte comme **entraînement** et ne fait pas avancer l'intervalle. L'accueil propose une **session du jour** (environ 10 min, les plus en retard d'abord) qui enchaîne les révisions.
+- **Historique et points faibles** : chaque séance est gardée (courbe de progression) ; les loci ratés récemment deviennent des points faibles qu'on peut tester seuls.
+- **Rappel libre** : réciter tout le palais dans l'ordre, sans voir les loci ; Logidex repère les oublis et les inversions.
+- **Tester en récitant** : dis ta réponse à voix haute (l'écoute continue pendant les pauses, puis tu relis et corriges le texte capté) ou écris-la ; Logidex la compare (accents, pluriels, petites erreurs de dictée tolérés ; négations détectées) et suggère la note : Su, À moitié ou Raté.
+- **Plusieurs éléments par locus** (jusqu'à 4, notés séparément) et **question facultative** : le test pose la question (« Formule du ratio de liquidité ? ») au lieu de montrer seulement le lieu.
+- **Laboratoire** : mots au hasard à placer dans un palais réservé à l'entraînement, chronométrés (1 à 4 par locus), rappel immédiat et à 24 h, record, vitesse, rétention et courbe de progression.
 - **Anti-mélange** : chaque palais affiche s'il est *Libre*, *Occupé* ou en *Mélange* (deux contenus actifs sur les mêmes loci). Les loci partagés sont marqués en orange, Logidex propose un palais libre à la création d'un contenu, et tu peux **archiver** un contenu ou le **déplacer** vers un autre palais.
 - **Atelier d'images** : les nombres d'un élément (« 1789 ») sont découpés et reliés à tes images 00–99 ; en option, Claude propose 3 images mentales qui font interagir l'élément avec le locus (avec ta propre clé API, gardée sur le téléphone).
 - **Rappel quotidien** : une notification à l'heure choisie, seulement les jours où quelque chose est à revoir, avec la liste réelle.
@@ -91,6 +95,10 @@ pnpm dev            # ouvre l'app dans le navigateur (aussi accessible depuis to
 pnpm check          # vérification TypeScript/Svelte
 ```
 
+```bash
+pnpm test           # tests : migrations, comparaison des réponses, révisions, rappels
+```
+
 Compiler l'APK localement (Android SDK + JDK 21 requis) :
 
 ```bash
@@ -115,7 +123,7 @@ android/                projet Android généré par Capacitor
 ## Suggestions d'images (facultatif)
 
 Réglages → Assistant d'images → colle une clé API Anthropic (`sk-ant-…`, à créer sur console.anthropic.com).
-La clé reste dans les préférences de l'app (jamais dans les exports). Chaque demande envoie seulement l'élément, le nom et la description du locus, et tes images de nombres concernées. Modèle : Claude Opus 5.5 (effort bas, environ 1 ¢ par demande), avec repli automatique côté serveur si une demande est refusée.
+La clé est chiffrée par le Keystore Android, jamais dans les exports, et exclue de la sauvegarde automatique d'Android. Chaque demande envoie seulement l'élément, le nom et la description du locus, et tes images de nombres concernées. Modèle : Claude Opus 5.5 (effort bas, environ 1 ¢ par demande), avec repli automatique côté serveur si une demande est refusée.
 
 ## Sauvegarde et mises à jour sans perte
 

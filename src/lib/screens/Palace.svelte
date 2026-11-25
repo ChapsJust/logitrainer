@@ -27,7 +27,9 @@
   import type { Locus, Room } from '../types';
   import Avatar from '../components/Avatar.svelte';
   import { OCCUPANCY_LABEL, freePalaces, overlaps, palaceUse } from '../interference';
-  import { db, getPlace, keepAsPalace, splitCandidates, splitPalaceIntoPlace, splitPreview } from '../store.svelte';
+  import { db, getPlace, keepAsPalace, setTraining, splitCandidates, splitPalaceIntoPlace, splitPreview, weakKeys } from '../store.svelte';
+  import Switch from '../components/Switch.svelte';
+  import History from '../components/History.svelte';
   import PlaceIconView from '../components/PlaceIconView.svelte';
   import { tick } from 'svelte';
 
@@ -359,6 +361,7 @@
     </div>
 
     {#if tab === 'trajet'}
+      <History history={palace.history} weak={weakKeys(palace).length} />
       <div class="chips">
         <button class="chip" disabled={flat.length === 0} onclick={() => nav.go({ name: 'walk', palaceId: palace.id })}>
           <Icon name="walk" />Promenade
@@ -522,13 +525,17 @@
           </button>
         {/each}
       {/if}
-      <button
-        class="fab no-nav"
-        onclick={() => {
-          targetPalaceId = palace.id;
-          newContentOpen = true;
-        }}><Icon name="plus" />Contenu</button
-      >
+      {#if palace.training}
+        <p class="body-m onv hint">Ce palais est réservé au Laboratoire : garde-le pour les mots au hasard, sans contenus d'études.</p>
+      {:else}
+        <button
+          class="fab no-nav"
+          onclick={() => {
+            targetPalaceId = palace.id;
+            newContentOpen = true;
+          }}><Icon name="plus" />Contenu</button
+        >
+      {/if}
     {/if}
   </div>
 
@@ -557,6 +564,14 @@
       <span>Description (facultatif)</span>
       <textarea bind:value={palace.description} rows="2" placeholder="Ex. l'appart de la rue Saint-Denis, 2015-2019"></textarea>
     </label>
+    <div class="list-item split-item">
+      <span class="num"><Icon name="flask" size={20} /></span>
+      <span class="li-text">
+        <span class="li-head">Réservé au Laboratoire</span>
+        <span class="li-sup">Pour les mots au hasard, jamais de contenus d'études</span>
+      </span>
+      <Switch checked={!!palace.training} label="Réservé au Laboratoire" onchange={(v) => setTraining(palace, v)} />
+    </div>
     {#if canSplit}
       <button class="list-item split-item" onclick={() => (splitOpen = true)}>
         <span class="num"><Icon name="building" size={20} /></span>
@@ -773,6 +788,7 @@
 
   <QuizStart
     bind:open={quizOpen}
+    weak={weakKeys(palace).length}
     kind="trajet"
     id={palace.id}
     explain="On te montre un numéro, tu retrouves le locus, puis tu révèles la réponse."

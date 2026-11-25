@@ -42,6 +42,9 @@ jobs:
       - name: Vérifier le code
         run: pnpm check
 
+      - name: Tests (migrations, comparaison des réponses, révisions, rappels)
+        run: pnpm test
+
       - name: Construire l'app web et synchroniser Android
         run: pnpm android:sync
 

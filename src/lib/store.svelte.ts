@@ -1,13 +1,13 @@
-import type { Content, ContentItem, Data, Locus, Palace, Place, PlaceIcon, QuizResult, Room } from './types';
+import type { Content, ContentItem, Data, LabSession, Locus, Palace, Place, PlaceIcon, QuizResult, Room } from './types';
 import { readBackup, readRaw, writeNamed, writeRaw, writeStartupBackup } from './storage';
 import { CURRENT_SCHEMA, NewerDataError, parseData } from './migrate';
 
 export { parseData };
 import { flatLoci, move, uid } from './util';
-import { nextReview, snooze } from './review';
+import { nextReview, snooze, startOfDay } from './review';
 
 function emptyData(): Data {
-  return { schema: 2, places: [], palaces: [], contents: [], numbers: {}, settings: { theme: 'auto' } };
+  return { schema: 3, places: [], palaces: [], contents: [], numbers: {}, settings: { theme: 'auto' }, lab: { sessions: [] } };
 }
 
 /** Toutes les données de l'app. Toute modification est sauvegardée automatiquement. */
@@ -29,6 +29,7 @@ function replaceAll(data: Data) {
   db.contents = data.contents;
   db.numbers = data.numbers;
   db.settings = data.settings;
+  db.lab = data.lab;
 }
 
 export async function load(): Promise<void> {
@@ -126,7 +127,9 @@ export function deletePlace(id: string): void {
  */
 export function splitCandidates(): Palace[] {
   const keep = new Set(db.settings.keepAsPalace ?? []);
-  return db.palaces.filter((p) => !p.placeId && !keep.has(p.id) && p.rooms.filter((r) => r.name).length >= 2);
+  return db.palaces.filter(
+    (p) => !p.placeId && !p.training && !keep.has(p.id) && p.rooms.filter((r) => r.name).length >= 2,
+  );
 }
 
 /** Ce que donnera la transformation : un palais par zone. */
@@ -349,9 +352,23 @@ export function deleteContent(id: string): void {
 }
 
 export function setItem(c: Content, locusId: string, item: ContentItem): void {
-  if (!item.text.trim() && !item.image.trim()) delete c.items[locusId];
-  else c.items[locusId] = { text: item.text.trim(), image: item.image.trim() };
+  const more = (item.more ?? []).map((m) => m.trim()).filter(Boolean).slice(0, 3);
+  const question = item.question?.trim() || undefined;
+  if (!item.text.trim() && !item.image.trim() && !more.length) delete c.items[locusId];
+  else
+    c.items[locusId] = {
+      text: item.text.trim(),
+      image: item.image.trim(),
+      ...(more.length ? { more } : {}),
+      ...(question ? { question } : {}),
+    };
   touch(c);
+}
+
+/** Tous les éléments à retenir d'un locus (1 à 4). */
+export function itemParts(item: ContentItem | undefined): string[] {
+  if (!item) return [];
+  return [item.text, ...(item.more ?? [])].map((t) => t.trim()).filter(Boolean);
 }
 
 /** Contenus non archivés d'un palais. */
@@ -413,9 +430,47 @@ export function pasteList(c: Content, p: Palace, lines: string[], start: number)
   return overflow;
 }
 
-export function recordQuiz(target: Palace | Content, result: QuizResult): void {
-  target.lastQuiz = result;
-  target.review = nextReview(target.review, result.score, result.total, result.at);
+const HISTORY_MAX = 300;
+
+/**
+ * Enregistre un test. Si la révision n'était pas encore due, c'est de l'entraînement :
+ * l'intervalle n'avance pas (on ne « gagne » pas 3 semaines en 3 tests le même soir),
+ * mais un échec ramène quand même la révision à demain.
+ * `cards` met à jour les points faibles (échecs récents par locus).
+ */
+export function recordQuiz(
+  target: Palace | Content,
+  result: QuizResult,
+  cards: { key: string; grade: 'known' | 'partial' | 'missed' }[] = [],
+): void {
+  const due = !target.review || target.review.due <= result.at;
+  const ratio = result.total ? result.score / result.total : 0;
+  const entry: QuizResult = { ...result, practice: !due || undefined };
+  if (due) {
+    target.review = nextReview(target.review, result.score, result.total, result.at);
+  } else if (ratio < 0.6 && target.review) {
+    target.review = { interval: target.review.interval, due: Math.min(target.review.due, startOfDay(result.at) + 86_400_000) };
+  }
+  target.lastQuiz = entry;
+  target.history = [...(target.history ?? []), entry].slice(-HISTORY_MAX);
+
+  const weak = { ...(target.weak ?? {}) };
+  for (const c of cards) {
+    if (c.grade === 'known') {
+      if (weak[c.key]) weak[c.key] = weak[c.key]! - 1;
+    } else {
+      weak[c.key] = Math.min(5, (weak[c.key] ?? 0) + (c.grade === 'missed' ? 2 : 1));
+    }
+    if (!weak[c.key]) delete weak[c.key];
+  }
+  target.weak = Object.keys(weak).length ? weak : undefined;
+}
+
+/** Loci considérés comme points faibles (échoués récemment, pas encore rattrapés). */
+export function weakKeys(target: Palace | Content): string[] {
+  return Object.entries(target.weak ?? {})
+    .filter(([, n]) => n >= 2)
+    .map(([k]) => k);
 }
 
 export function snoozeReview(target: Palace | Content): void {
@@ -471,4 +526,22 @@ export function createSample(): Palace {
     if (f) c.items[f.locus.id] = { text, image };
   });
   return p;
+}
+
+/* ---------- Laboratoire ---------- */
+
+export function setTraining(p: Palace, on: boolean): void {
+  p.training = on || undefined;
+  touch(p);
+}
+
+export function addLabSession(session: Omit<LabSession, 'id'>): LabSession {
+  db.lab.sessions.push({ ...session, id: uid() });
+  // On ne garde que les 200 dernières séances.
+  if (db.lab.sessions.length > 200) db.lab.sessions.splice(0, db.lab.sessions.length - 200);
+  return db.lab.sessions[db.lab.sessions.length - 1]!;
+}
+
+export function getLabSession(id: string): LabSession | undefined {
+  return db.lab.sessions.find((s) => s.id === id);
 }

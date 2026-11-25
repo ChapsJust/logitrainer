@@ -22,9 +22,13 @@
         : ''}
     </span>
   </span>
-  <span class="spill {use.state}">
-    {#if use.state === 'mixed'}<Icon name="alert" size={14} stroke={2.2} />{/if}{OCCUPANCY_LABEL[use.state]}
-  </span>
+  {#if palace.training}
+    <span class="spill used"><Icon name="flask" size={14} />Labo</span>
+  {:else}
+    <span class="spill {use.state}">
+      {#if use.state === 'mixed'}<Icon name="alert" size={14} stroke={2.2} />{/if}{OCCUPANCY_LABEL[use.state]}
+    </span>
+  {/if}
 </button>
 
 <style>

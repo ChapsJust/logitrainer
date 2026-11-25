@@ -15,6 +15,8 @@
     setArchived,
     touch,
     addLocus,
+    itemParts,
+    weakKeys,
   } from '../store.svelte';
   import { OCCUPANCY_LABEL, neighbours, overlaps, palaceUse } from '../interference';
   import { lociCount, plural } from '../util';
@@ -25,6 +27,7 @@
   import { haptic } from '../haptics';
 
   import { tick } from 'svelte';
+  import History from '../components/History.svelte';
 
   let { id, focus }: { id: string; focus?: string } = $props();
 
@@ -35,6 +38,7 @@
   const filled = $derived(content && palace ? filledCount(content, palace) : 0);
   const due = $derived(content ? contentDue(content, palace) : null);
   const ov = $derived(content ? overlaps(content) : []);
+  const weak = $derived(content ? new Set(weakKeys(content)) : new Set<string>());
 
   let moveOpen = $state(false);
   /** Position du dernier locus rempli (1 = premier). */
@@ -207,6 +211,8 @@
         <div class="progress"><span style:width="{(filled / flat.length) * 100}%"></span></div>
       </div>
 
+      <History history={content.history} weak={weak.size} />
+
       <div class="cta px">
         <button class="btn filled lg block has-icon" onclick={() => nav.go({ name: 'fill', id, start: complete ? 0 : resumeAt })}>
           <Icon name="pencil" size={20} />{complete
@@ -246,14 +252,15 @@
         {/if}
         {@const others = item?.text && !content.archived ? neighbours(content, f.locus.id) : []}
         <button class="list-item two" class:flash={flash === f.locus.id} data-locus={f.locus.id} onclick={() => tapRow(i, f.locus.id)}>
-          <span class="num" class:dashed={!item?.text} class:shared={others.length > 0}>{f.n}</span>
+          <span class="num" class:dashed={!item?.text} class:shared={others.length > 0} class:weakn={weak.has(f.locus.id)}>{f.n}</span>
           <span class="li-text">
             <span class="li-over ellipsis">{f.locus.name}</span>
             {#if item?.text}
               {#if hide && !revealed[f.locus.id]}
                 <span class="masked"></span>
               {:else}
-                <span class="value">{item.text}</span>
+                {#if item.question}<span class="li-sup q">Q : {item.question}</span>{/if}
+                <span class="value">{itemParts(item).join(' · ')}</span>
                 {#if item.image}<span class="li-sup">{item.image}</span>{/if}
                 {#if others.length}
                   <span class="also"><Icon name="layers" size={14} />Aussi ici : {others.map((o) => o.text).join(', ')}</span>
@@ -400,6 +407,7 @@
 
   <QuizStart
     bind:open={quizOpen}
+    weak={weak.size}
     kind="content"
     id={content.id}
     explain="On te montre le locus, tu retrouves ce que tu y as déposé, puis tu révèles la réponse."
@@ -417,6 +425,14 @@
     font-weight: 500;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
+  }
+
+  .num.weakn {
+    box-shadow: 0 0 0 2px var(--error);
+  }
+
+  .q {
+    font-style: italic;
   }
 
   .cta {

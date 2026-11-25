@@ -55,7 +55,7 @@ export function freePalaces(excludeId?: string): Palace[] {
   const lastUse = (p: Palace) =>
     Math.max(0, ...db.contents.filter((c) => c.palaceId === p.id).map((c) => c.updatedAt));
   return db.palaces
-    .filter((p) => p.id !== excludeId && flatLoci(p).length > 0 && palaceUse(p).state === 'free')
+    .filter((p) => p.id !== excludeId && !p.training && flatLoci(p).length > 0 && palaceUse(p).state === 'free')
     .sort((a, b) => flatLoci(b).length - flatLoci(a).length || lastUse(a) - lastUse(b));
 }
 
