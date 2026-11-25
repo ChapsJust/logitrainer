@@ -312,6 +312,8 @@
         font-weight: 750;
       }
 
+      .level-choice:disabled { cursor: default; opacity: .55; }
+
       .level-choice[aria-pressed="true"] {
         color: var(--green-dark);
         background: #e9efe7;
@@ -484,7 +486,8 @@
         function setGameState(nextState) {
           state = nextState;
           palets.forEach((palet) => { palet.disabled = nextState !== "input"; });
-          startButton.disabled = nextState === "showing";
+          difficultyButtons.forEach((button) => { button.disabled = nextState !== "ready"; });
+          startButton.disabled = nextState === "showing" || nextState === "transition";
         }
 
         function makeSequence(length) {
@@ -557,16 +560,17 @@
               // Le jeu reste jouable si le stockage local est indisponible.
             }
           }
-          setGameState("ready");
           if (sequence.length === palets.length) {
+            setGameState("ready");
             levelValue.textContent = "✓";
             setStatus("Incroyable ! Vous avez réussi la séquence maximale.", "success");
             startButton.textContent = "Recommencer";
             return;
           }
+          setGameState("transition");
           setStatus("Séquence réussie ! On passe au niveau suivant.", "success");
           await wait(850);
-          if (state !== "ready") return;
+          if (state !== "transition") return;
           startRound();
         }
 
@@ -580,7 +584,7 @@
         });
         difficultyButtons.forEach((button) => {
           button.addEventListener("click", () => {
-            if (state === "showing" || state === "input") return;
+            if (state !== "ready") return;
             canRetry = false;
             initialLength = Number(button.dataset.length);
             difficultyButtons.forEach((choice) => choice.setAttribute("aria-pressed", String(choice === button)));
