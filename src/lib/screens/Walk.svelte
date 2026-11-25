@@ -1,7 +1,7 @@
 <script lang="ts">
   import TopBar from '../components/TopBar.svelte';
   import Icon from '../components/Icon.svelte';
-  import { contentsOf, getPalace } from '../store.svelte';
+  import { contentsOf, getPalace, setItem, touch } from '../store.svelte';
   import { nav } from '../nav.svelte';
   import { flatLoci } from '../util';
   import { haptic } from '../haptics';
@@ -25,8 +25,41 @@
   const finished = $derived(index >= flat.length);
   const showAnswer = $derived(autoReveal || revealed);
 
+  /* ---------- Corriger sur place ---------- */
+  let editing = $state(false);
+  let edA = $state('');
+  let edB = $state('');
+
+  function startEdit(e: Event) {
+    e.stopPropagation();
+    if (!step) return;
+    if (content) {
+      edA = item?.text ?? '';
+      edB = item?.image ?? '';
+    } else {
+      edA = step.locus.name;
+      edB = step.locus.description;
+    }
+    editing = true;
+    revealed = true;
+  }
+
+  function saveEdit(e?: Event) {
+    e?.stopPropagation();
+    if (!step || !palace) return;
+    if (content) setItem(content, step.locus.id, { text: edA, image: edB });
+    else {
+      step.locus.name = edA.trim() || step.locus.name;
+      step.locus.description = edB.trim();
+      touch(palace);
+    }
+    editing = false;
+    haptic.tap();
+  }
+
   function goTo(i: number) {
     if (i < 0 || i > flat.length) return;
+    if (editing) saveEdit();
     dir = i > index ? 1 : -1;
     index = i;
     revealed = false;
@@ -41,6 +74,7 @@
   let moved = false;
 
   function down(e: PointerEvent) {
+    if (editing) return;
     dragging = true;
     moved = false;
     startX = e.clientX;
@@ -67,7 +101,7 @@
   }
 
   function tap() {
-    if (moved) return;
+    if (moved || editing) return;
     if (content && item?.text && !showAnswer) {
       revealed = true;
       haptic.tap();
@@ -77,6 +111,7 @@
   }
 
   function onKey(e: KeyboardEvent) {
+    if (editing || (e.target as HTMLElement | null)?.closest('input, textarea')) return;
     if (e.key === 'ArrowRight') goTo(index + 1);
     else if (e.key === 'ArrowLeft') goTo(index - 1);
     else if (e.key === ' ') tap();
@@ -147,11 +182,32 @@
               {#if step.room.name}<span class="chip plain">{step.room.name}</span>{/if}
               <span class="grow"></span>
               <span class="label-l onv">{step.n} / {flat.length}</span>
+              {#if !editing}
+                <button class="icon-btn edit" onclick={startEdit} onpointerdown={(e) => e.stopPropagation()} aria-label="Modifier">
+                  <Icon name="pencil" size={20} />
+                </button>
+              {/if}
             </div>
             <p class="place">{step.locus.name || 'Sans nom'}</p>
             {#if step.locus.description}<p class="body-l onv">{step.locus.description}</p>{/if}
 
-            {#if content}
+            {#if editing}
+              <div class="answer" role="presentation" onclick={(e) => e.stopPropagation()} onpointerdown={(e) => e.stopPropagation()}>
+                <label class="tf" style="margin-bottom: 10px">
+                  <span>{content ? 'À retenir' : "Nom de l'endroit"}</span>
+                  <!-- svelte-ignore a11y_autofocus -->
+                  <input bind:value={edA} autofocus enterkeyhint="done" onkeydown={(e) => e.key === 'Enter' && saveEdit(e)} />
+                </label>
+                <label class="tf" style="margin-bottom: 10px">
+                  <span>{content ? 'Image mentale' : 'Description'}</span>
+                  <textarea bind:value={edB} rows="2"></textarea>
+                </label>
+                <div class="row" style="justify-content: flex-end">
+                  <button class="btn text" onclick={(e) => ((editing = false), e.stopPropagation())}>Annuler</button>
+                  <button class="btn filled has-icon" onclick={saveEdit}><Icon name="check" size={18} />OK</button>
+                </div>
+              </div>
+            {:else if content}
               {#if item?.text}
                 {#if showAnswer}
                   <div class="answer">
@@ -163,7 +219,10 @@
                   <p class="hint label-l onv"><Icon name="eye" size={18} />Que vois-tu ici ? Touche pour révéler</p>
                 {/if}
               {:else}
-                <p class="hint label-l onv">Rien de déposé ici</p>
+                <p class="hint label-l onv">
+                  Rien de déposé ici
+                  <button class="btn text" onclick={startEdit} onpointerdown={(e) => e.stopPropagation()}>Ajouter</button>
+                </p>
               {/if}
             {:else}
               <p class="hint label-l onv">Visualise l'endroit, puis glisse vers la gauche</p>
@@ -197,6 +256,12 @@
 {/if}
 
 <style>
+  .edit {
+    width: 40px;
+    height: 40px;
+    margin: -8px -10px -8px 0;
+  }
+
   .stage {
     padding: 16px;
   }

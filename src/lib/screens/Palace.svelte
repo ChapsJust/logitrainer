@@ -27,13 +27,37 @@
   import type { Locus, Room } from '../types';
   import Avatar from '../components/Avatar.svelte';
   import { OCCUPANCY_LABEL, freePalaces, overlaps, palaceUse } from '../interference';
-  import { db } from '../store.svelte';
+  import { db, getPlace } from '../store.svelte';
+  import PlaceIconView from '../components/PlaceIconView.svelte';
+  import { tick } from 'svelte';
 
-  let { id, tab: initialTab = 'trajet' }: { id: string; tab?: 'trajet' | 'contents' } = $props();
+  let {
+    id,
+    tab: initialTab = 'trajet',
+    focus,
+  }: { id: string; tab?: 'trajet' | 'contents'; focus?: string } = $props();
 
   const palace = $derived(getPalace(id));
   // svelte-ignore state_referenced_locally
-  let tab = $state(initialTab);
+  let tab = $state(focus ? 'trajet' : initialTab);
+  const place = $derived(getPlace(palace?.placeId));
+
+  /* ---------- Arrivée depuis la recherche : défiler jusqu'au locus et le surligner ---------- */
+  let flash = $state<string | null>(null);
+  $effect(() => {
+    if (!focus) return;
+    const f = focus;
+    void tick().then(() => {
+      const el = document.querySelector(`[data-id="${f}"]`);
+      el?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      flash = f;
+      const hit = flat.find((x) => x.locus.id === f);
+      if (hit) toast(`Trouvé : locus ${hit.n}, ${hit.locus.name}${hit.room.name ? ` (${hit.room.name})` : ''}`);
+      setTimeout(() => (flash = null), 2600);
+      const r = nav.current;
+      if (r.name === 'palace') r.focus = undefined;
+    });
+  });
 
   function setTab(t: 'trajet' | 'contents') {
     tab = t;
@@ -214,17 +238,19 @@
     const c = createContent(targetPalaceId, newContentTitle);
     newContentOpen = false;
     newContentTitle = '';
+    // On ouvre le contenu puis on lance directement le remplissage pas à pas.
     nav.go({ name: 'content', id: c.id });
+    if (flatLoci(getPalace(targetPalaceId)!).length) nav.go({ name: 'fill', id: c.id });
   }
 
   function addNewRoom() {
     if (!palace) return;
     const only = palace.rooms[0];
     if (palace.rooms.length === 1 && only && !only.name && only.loci.length === 0) {
-      only.name = newRoomName.trim() || 'Pièce 1';
+      only.name = newRoomName.trim() || 'Zone 1';
     } else {
-      if (palace.rooms.length === 1 && only && !only.name) only.name = 'Pièce 1';
-      addRoom(palace, newRoomName.trim() || `Pièce ${palace.rooms.length + 1}`);
+      if (palace.rooms.length === 1 && only && !only.name) only.name = 'Zone 1';
+      addRoom(palace, newRoomName.trim() || `Zone ${palace.rooms.length + 1}`);
     }
     newRoomOpen = false;
     newRoomName = '';
@@ -241,11 +267,16 @@
   </TopBar>
 
   <div class="page no-nav">
-    <h1 class="headline-m page-title">{palace.name}</h1>
+    {#if place}
+      <button class="crumb label-l primary" onclick={() => nav.go({ name: 'place', id: place.id })}>
+        <PlaceIconView icon={place.icon} size={22} />{place.name} ›
+      </button>
+    {/if}
+    <h1 class="headline-m page-title" class:tight={!!place}>{palace.name}</h1>
     <p class="body-m page-sub">
-      {plural(lociCount(palace), 'locus', 'loci')}{namedRooms ? ' · ' + plural(namedRooms, 'pièce', 'pièces') : ''}{due !== null
-        ? ' · révision ' + dueLabel(due)
-        : ''}
+      {#if palace.subject}<span class="subj">{palace.subject}</span> · {/if}{plural(lociCount(palace), 'locus', 'loci')}{namedRooms
+        ? ' · ' + plural(namedRooms, 'zone', 'zones')
+        : ''}{due !== null ? ' · révision ' + dueLabel(due) : ''}
     </p>
     {#if palace.description}
       <p class="body-m page-sub desc">{palace.description}</p>
@@ -299,14 +330,41 @@
         <button class="chip" disabled={flat.length === 0} onclick={() => (quizOpen = true)}>
           <Icon name="play" />Tester
         </button>
-        <button class="chip" onclick={() => (newRoomOpen = true)}><Icon name="plus" />Pièce</button>
+        <button class="chip" onclick={() => (newRoomOpen = true)}><Icon name="plus" />Zone</button>
       </div>
 
+      {#if flat.length === 0 && !showRoomHeaders && palace.rooms[0]}
+        {@const first = palace.rooms[0]}
+        <div class="start">
+          <div class="art"><Icon name="walk" size={32} /></div>
+          <p class="title-m">Fais le trajet dans ta tête</p>
+          <p class="body-m onv">Note chaque endroit que tu croises, dans l'ordre : la porte, un meuble, un coin…</p>
+        </div>
+        <form
+          class="first"
+          onsubmit={(e) => {
+            e.preventDefault();
+            quickAdd(first);
+          }}
+        >
+          <span class="num dashed">1</span>
+          <!-- svelte-ignore a11y_autofocus -->
+          <input
+            class="grow body-l"
+            placeholder="Premier endroit, ex. la porte d'entrée"
+            bind:value={drafts[first.id]}
+            onpaste={(e) => onPaste(e, first)}
+            enterkeyhint="next"
+            autofocus
+          />
+        </form>
+        <p class="body-m onv hint">Entrée = locus suivant. Tu peux aussi coller une liste (une ligne = un locus). Les zones sont facultatives.</p>
+      {:else}
       <div class="list" class:dragging={!!drag} bind:this={listEl}>
         {#each palace.rooms as room (room.id)}
           {#if showRoomHeaders}
             <button class="subheader room-head" data-slot="room" data-room={room.id} onclick={() => openRoom(room)}>
-              <span class="grow ellipsis">{room.name || 'Pièce sans nom'}</span>
+              <span class="grow ellipsis">{room.name || 'Zone sans nom'}</span>
               <span class="label-m onv">{room.loci.length}</span>
             </button>
           {:else}
@@ -317,6 +375,7 @@
             {@const lifted = drag?.id === locus.id}
             <div
               class="locus"
+              class:flash={flash === locus.id}
               class:lifted
               data-slot="locus"
               data-room={room.id}
@@ -377,7 +436,8 @@
           Écris le nom d'un endroit et appuie sur Entrée pour enchaîner. Tu peux aussi coller une liste : une ligne = un locus.
         </p>
       {:else}
-        <p class="body-m onv hint">Maintiens la poignée à droite pour déplacer un locus, même vers une autre pièce.</p>
+        <p class="body-m onv hint">Maintiens la poignée à droite pour déplacer un locus, même vers une autre zone.</p>
+      {/if}
       {/if}
     {:else}
       <div style="height: 8px"></div>
@@ -443,6 +503,21 @@
       <input bind:value={palace.name} />
     </label>
     <label class="tf">
+      <span>Matière ou sujet (facultatif)</span>
+      <input
+        value={palace.subject ?? ''}
+        oninput={(e) => (palace.subject = e.currentTarget.value.trim() ? e.currentTarget.value : undefined)}
+        placeholder="Ex. Mathématiques"
+      />
+    </label>
+    <label class="tf">
+      <span>Lieu</span>
+      <select value={palace.placeId ?? ''} onchange={(e) => (palace.placeId = e.currentTarget.value || undefined)}>
+        <option value="">Aucun lieu</option>
+        {#each db.places as l (l.id)}<option value={l.id}>{l.name}</option>{/each}
+      </select>
+    </label>
+    <label class="tf">
       <span>Description (facultatif)</span>
       <textarea bind:value={palace.description} rows="2" placeholder="Ex. l'appart de la rue Saint-Denis, 2015-2019"></textarea>
     </label>
@@ -469,11 +544,11 @@
   />
 
   <!-- Pièce -->
-  <Sheet bind:open={roomSheetOpen} title="Pièce" onclose={() => touch(palace)}>
+  <Sheet bind:open={roomSheetOpen} title="Zone" onclose={() => touch(palace)}>
     {#if roomSheet}
       {@const ri = palace.rooms.indexOf(roomSheet)}
       <label class="tf">
-        <span>Nom de la pièce</span>
+        <span>Nom de la zone</span>
         <input bind:value={roomSheet.name} placeholder="Ex. Cuisine" />
       </label>
       <div class="row">
@@ -495,7 +570,7 @@
         onclick={() => {
           const r = roomSheet;
           roomSheetOpen = false;
-          if (r) withUndo(`Pièce « ${r.name || 'sans nom'} » supprimée`, () => deleteRoom(palace, r.id));
+          if (r) withUndo(`Zone « ${r.name || 'sans nom'} » supprimée`, () => deleteRoom(palace, r.id));
         }}>Supprimer</button
       >
       <span class="grow"></span>
@@ -518,10 +593,10 @@
       <p class="helper">Des détails concrets (couleur, matière, odeur) rendent le locus plus facile à visualiser.</p>
       {#if palace.rooms.length > 1}
         <label class="tf">
-          <span>Pièce</span>
+          <span>Zone</span>
           <select value={roomOf(ls.id)?.id} onchange={(e) => moveLocusToRoom(palace, ls.id, e.currentTarget.value)}>
             {#each palace.rooms as r (r.id)}
-              <option value={r.id}>{r.name || 'Pièce sans nom'}</option>
+              <option value={r.id}>{r.name || 'Zone sans nom'}</option>
             {/each}
           </select>
         </label>
@@ -554,7 +629,7 @@
   </Sheet>
 
   <!-- Nouvelle pièce -->
-  <Sheet bind:open={newRoomOpen} title="Nouvelle pièce">
+  <Sheet bind:open={newRoomOpen} title="Nouvelle zone">
     <form
       onsubmit={(e) => {
         e.preventDefault();
@@ -562,11 +637,11 @@
       }}
     >
       <label class="tf">
-        <span>Nom de la pièce</span>
+        <span>Nom de la zone</span>
         <!-- svelte-ignore a11y_autofocus -->
         <input bind:value={newRoomName} placeholder="Ex. Cuisine" autofocus enterkeyhint="done" />
       </label>
-      <p class="helper">Les pièces regroupent tes loci. La numérotation continue d'une pièce à l'autre.</p>
+      <p class="helper">Une zone regroupe des loci (une pièce, « avant de la classe », un étage…). La numérotation continue d'une zone à l'autre.</p>
       <div class="row" style="justify-content: flex-end">
         <button class="btn text" type="button" onclick={() => (newRoomOpen = false)}>Annuler</button>
         <button class="btn filled" type="submit">Ajouter</button>
@@ -747,6 +822,75 @@
     background:
       radial-gradient(closest-side, var(--surface) 82%, transparent 83%),
       conic-gradient(var(--p) calc(var(--pct) * 360deg), var(--surface-highest) 0);
+  }
+
+  .crumb {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 2px 16px 0;
+  }
+
+  .page-title.tight {
+    padding-top: 2px;
+  }
+
+  .subj {
+    display: inline-flex;
+    align-items: center;
+    height: 22px;
+    padding: 0 8px;
+    border-radius: 6px;
+    background: var(--sc);
+    color: var(--onsc);
+    font-size: 12.5px;
+    font-weight: 600;
+  }
+
+  .start {
+    text-align: center;
+    padding: 28px 32px 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .start .art {
+    width: 72px;
+    height: 72px;
+    margin: 0 auto 8px;
+    border-radius: 24px;
+    background: var(--sc);
+    color: var(--onsc);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .first {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin: 20px 16px 0;
+    padding: 6px 16px;
+    background: var(--surface-highest);
+    border-radius: 4px 4px 0 0;
+    border-bottom: 2px solid var(--p);
+  }
+
+  .first input {
+    border: none;
+    outline: none;
+    background: transparent;
+    height: 48px;
+    min-width: 0;
+  }
+
+  .locus.flash {
+    background: var(--pc);
+    border-radius: 16px;
+    box-shadow: 0 0 0 2px var(--p);
+    transition: background 0.4s;
   }
 
   .occ {

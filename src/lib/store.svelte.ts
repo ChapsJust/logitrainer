@@ -1,4 +1,4 @@
-import type { Content, ContentItem, Data, Locus, Palace, QuizResult, Room } from './types';
+import type { Content, ContentItem, Data, Locus, Palace, Place, PlaceIcon, QuizResult, Room } from './types';
 import { readBackup, readRaw, writeNamed, writeRaw, writeStartupBackup } from './storage';
 import { CURRENT_SCHEMA, NewerDataError, parseData } from './migrate';
 
@@ -7,7 +7,7 @@ import { flatLoci, move, uid } from './util';
 import { nextReview, snooze } from './review';
 
 function emptyData(): Data {
-  return { schema: 1, palaces: [], contents: [], numbers: {}, settings: { theme: 'auto' } };
+  return { schema: 2, places: [], palaces: [], contents: [], numbers: {}, settings: { theme: 'auto' } };
 }
 
 /** Toutes les données de l'app. Toute modification est sauvegardée automatiquement. */
@@ -24,6 +24,7 @@ export const status = $state({
 
 function replaceAll(data: Data) {
   db.schema = data.schema;
+  db.places = data.places;
   db.palaces = data.palaces;
   db.contents = data.contents;
   db.numbers = data.numbers;
@@ -97,17 +98,41 @@ export function restore(json: string): void {
   replaceAll(parseData(json).data);
 }
 
+/* ---------- Lieux ---------- */
+
+export function getPlace(id: string | undefined): Place | undefined {
+  return id ? db.places.find((l) => l.id === id) : undefined;
+}
+
+export function createPlace(name: string, icon: PlaceIcon = 'building'): Place {
+  db.places.push({ id: uid(), name: name.trim() || 'Nouveau lieu', icon, createdAt: Date.now() });
+  return db.places[db.places.length - 1]!;
+}
+
+/** Palais d'un lieu (ou sans lieu si `placeId` est undefined), les plus récents d'abord. */
+export function palacesOf(placeId: string | undefined): Palace[] {
+  return db.palaces.filter((p) => (p.placeId ?? undefined) === placeId).sort((a, b) => b.updatedAt - a.updatedAt);
+}
+
+/** Supprime le lieu ; ses palais sont gardés, simplement sans lieu. */
+export function deletePlace(id: string): void {
+  for (const p of db.palaces) if (p.placeId === id) p.placeId = undefined;
+  db.places = db.places.filter((l) => l.id !== id);
+}
+
 /* ---------- Palais ---------- */
 
 export function getPalace(id: string): Palace | undefined {
   return db.palaces.find((p) => p.id === id);
 }
 
-export function createPalace(name: string, emoji: string): Palace {
+export function createPalace(name: string, emoji: string, placeId?: string, subject?: string): Palace {
   const now = Date.now();
   db.palaces.push({
     id: uid(),
     name: name.trim() || 'Nouveau palais',
+    placeId: placeId || undefined,
+    subject: subject?.trim() || undefined,
     emoji,
     description: '',
     rooms: [{ id: uid(), name: '', loci: [] }],

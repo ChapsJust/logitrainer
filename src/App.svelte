@@ -9,6 +9,9 @@
   import Search from './lib/screens/Search.svelte';
   import Settings from './lib/screens/Settings.svelte';
   import Onboarding from './lib/screens/Onboarding.svelte';
+  import Place from './lib/screens/Place.svelte';
+  import Fill from './lib/screens/Fill.svelte';
+  import NumbersCreate from './lib/screens/NumbersCreate.svelte';
   import { nav } from './lib/nav.svelte';
   import { db, status } from './lib/store.svelte';
   import { app, dismissSnack, toast } from './lib/app.svelte';
@@ -43,10 +46,16 @@
           <Numbers />
         {:else if route.name === 'settings'}
           <Settings />
+        {:else if route.name === 'place'}
+          <Place id={route.id} />
         {:else if route.name === 'palace'}
-          <Palace id={route.id} tab={route.tab} />
+          <Palace id={route.id} tab={route.tab} focus={route.focus} />
         {:else if route.name === 'content'}
-          <Content id={route.id} />
+          <Content id={route.id} focus={route.focus} />
+        {:else if route.name === 'fill'}
+          <Fill id={route.id} start={route.start} />
+        {:else if route.name === 'numbers-create'}
+          <NumbersCreate start={route.start} />
         {:else if route.name === 'quiz'}
           <Quiz kind={route.kind} id={route.id} order={route.order} />
         {:else if route.name === 'walk'}

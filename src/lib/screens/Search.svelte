@@ -26,9 +26,19 @@
     const match = (...s: (string | undefined)[]) => s.some((x) => x && normalize(x).includes(q));
     const out: Hit[] = [];
 
+    for (const l of db.places) {
+      if (match(l.name)) out.push({ key: l.id, icon: 'building', title: l.name, detail: 'Lieu', route: { name: 'place', id: l.id } });
+    }
+
     for (const p of db.palaces) {
-      if (match(p.name, p.description)) {
-        out.push({ key: p.id, icon: 'home', title: p.name, detail: 'Palais', route: { name: 'palace', id: p.id } });
+      if (match(p.name, p.description, p.subject)) {
+        out.push({
+          key: p.id,
+          icon: 'home',
+          title: p.name,
+          detail: p.subject ? `Palais · ${p.subject}` : 'Palais',
+          route: { name: 'palace', id: p.id },
+        });
       }
       for (const f of flatLoci(p)) {
         if (match(f.locus.name, f.locus.description, f.room.name)) {
@@ -37,7 +47,7 @@
             icon: 'door',
             title: `${f.n}. ${f.locus.name}`,
             detail: `${p.name}${f.room.name ? ' · ' + f.room.name : ''}`,
-            route: { name: 'palace', id: p.id, tab: 'trajet' },
+            route: { name: 'palace', id: p.id, tab: 'trajet', focus: f.locus.id },
           });
         }
       }
@@ -57,7 +67,7 @@
             icon: 'sparkle',
             title: item.text,
             detail: `${c.title} · ${f.n}. ${f.locus.name}`,
-            route: { name: 'content', id: c.id },
+            route: { name: 'content', id: c.id, focus: f.locus.id },
           });
         }
       }
@@ -86,7 +96,7 @@
         class="body-l grow"
         type="search"
         bind:value={query}
-        placeholder="Palais, locus, info…"
+        placeholder="Lieu, palais, locus, info…"
         enterkeyhint="search"
       />
       {#if query}

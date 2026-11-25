@@ -1,8 +1,9 @@
 <script lang="ts">
-  import Sheet from '../components/Sheet.svelte';
   import Icon from '../components/Icon.svelte';
-  import Avatar from '../components/Avatar.svelte';
-  import { createPalace, createSample, db, getPalace, snoozeReview } from '../store.svelte';
+  import PalaceRow from '../components/PalaceRow.svelte';
+  import PlaceIconView from '../components/PlaceIconView.svelte';
+  import NewPalaceSheet from '../components/NewPalaceSheet.svelte';
+  import { createSample, db, getPalace, palacesOf, snoozeReview } from '../store.svelte';
   import { nav, type Route } from '../nav.svelte';
   import { lociCount, plural } from '../util';
   import { app, toast } from '../app.svelte';
@@ -10,7 +11,6 @@
   import { haptic } from '../haptics';
   import { syncReminders } from '../reminders';
   import type { Content, Palace } from '../types';
-  import { OCCUPANCY_LABEL, palaceUse } from '../interference';
 
   interface DueItem {
     key: string;
@@ -22,9 +22,18 @@
   }
 
   let creating = $state(false);
-  let name = $state('');
 
   const palaces = $derived([...db.palaces].sort((a, b) => b.updatedAt - a.updatedAt));
+  const loose = $derived(palacesOf(undefined));
+  const collapsed = $derived(new Set(db.settings.collapsedPlaces ?? []));
+
+  function toggle(id: string) {
+    const set = new Set(db.settings.collapsedPlaces ?? []);
+    if (set.has(id)) set.delete(id);
+    else set.add(id);
+    db.settings.collapsedPlaces = [...set];
+    haptic.tick();
+  }
   const totalLoci = $derived(db.palaces.reduce((s, p) => s + lociCount(p), 0));
 
   const schedule = $derived.by((): DueItem[] => {
@@ -69,12 +78,6 @@
     void syncReminders();
   }
 
-  function create() {
-    const p = createPalace(name, '');
-    creating = false;
-    name = '';
-    nav.go({ name: 'palace', id: p.id });
-  }
 </script>
 
 <div class="page">
@@ -87,7 +90,7 @@
 
   <h1 class="headline-m page-title">Mes palais</h1>
   <p class="body-m page-sub">
-    {plural(db.palaces.length, 'palais', 'palais')} · {plural(totalLoci, 'locus', 'loci')} · {plural(db.contents.length, 'contenu', 'contenus')}
+    {db.places.length ? plural(db.places.length, 'lieu', 'lieux') + ' · ' : ''}{plural(db.palaces.length, 'palais', 'palais')} · {plural(totalLoci, 'locus', 'loci')} · {plural(db.contents.length, 'contenu', 'contenus')}
   </p>
 
   {#if app.update}
@@ -147,25 +150,42 @@
       </div>
     </div>
   {:else}
-    <h2 class="subheader">Tous les palais</h2>
-    {#each palaces as p (p.id)}
-      {@const use = palaceUse(p)}
-      {@const nr = p.rooms.filter((r) => r.name).length}
-      <button class="list-item two" onclick={() => nav.go({ name: 'palace', id: p.id })}>
-        <Avatar id={p.id} name={p.name} />
-        <span class="li-text">
-          <span class="li-head ellipsis">{p.name}</span>
-          <span class="li-sup ellipsis">
-            {plural(lociCount(p), 'locus', 'loci')}{nr ? ' · ' + plural(nr, 'pièce', 'pièces') : ''}{use.active.length
-              ? ' · ' + plural(use.active.length, 'contenu actif', 'contenus actifs')
-              : ''}
-          </span>
-        </span>
-        <span class="spill {use.state}">
-          {#if use.state === 'mixed'}<Icon name="alert" size={14} stroke={2.2} />{/if}{OCCUPANCY_LABEL[use.state]}
-        </span>
-      </button>
+    {#each db.places as l (l.id)}
+      {@const list = palacesOf(l.id)}
+      {@const isOpen = !collapsed.has(l.id)}
+      <section class="place">
+        <div class="ph">
+          <button class="ph-main" onclick={() => nav.go({ name: 'place', id: l.id })}>
+            <PlaceIconView icon={l.icon} />
+            <span class="grow">
+              <span class="title-m ellipsis" style="display: block">{l.name}</span>
+              <span class="body-m onv">{plural(list.length, 'palais', 'palais')}</span>
+            </span>
+          </button>
+          <button class="icon-btn" onclick={() => toggle(l.id)} aria-label={isOpen ? 'Replier' : 'Déplier'} aria-expanded={isOpen}>
+            <Icon name={isOpen ? 'chevronUp' : 'chevronDown'} />
+          </button>
+        </div>
+        {#if isOpen}
+          {#each list as p (p.id)}
+            <div class="sep"></div>
+            <PalaceRow palace={p} nested />
+          {:else}
+            <div class="sep"></div>
+            <button class="list-item add-in" onclick={() => nav.go({ name: 'place', id: l.id })}>
+              <span class="body-m primary">+ Ajouter un palais dans ce lieu</span>
+            </button>
+          {/each}
+        {/if}
+      </section>
     {/each}
+
+    {#if loose.length}
+      <h2 class="subheader">{db.places.length ? 'Sans lieu' : 'Tous les palais'}</h2>
+      {#each loose as p (p.id)}
+        <PalaceRow palace={p} />
+      {/each}
+    {/if}
   {/if}
 </div>
 
@@ -173,25 +193,7 @@
   <Icon name="plus" />Nouveau palais
 </button>
 
-<Sheet bind:open={creating} title="Nouveau palais">
-  <form
-    onsubmit={(e) => {
-      e.preventDefault();
-      create();
-    }}
-  >
-    <label class="tf">
-      <span>Nom du lieu</span>
-      <!-- svelte-ignore a11y_autofocus -->
-      <input bind:value={name} placeholder="Ex. Maison de mes parents" autofocus enterkeyhint="done" />
-    </label>
-    <p class="helper">Un lieu que tu connais par cœur : maison, école, trajet quotidien…</p>
-    <div class="row" style="justify-content: flex-end">
-      <button class="btn text" type="button" onclick={() => (creating = false)}>Annuler</button>
-      <button class="btn filled" type="submit">Créer</button>
-    </div>
-  </form>
-</Sheet>
+<NewPalaceSheet bind:open={creating} />
 
 <style>
   .top {
@@ -212,6 +214,39 @@
     gap: 16px;
     padding: 0 20px;
     color: var(--onv);
+  }
+
+  .place {
+    margin: 12px 16px 0;
+    background: var(--surface-low);
+    border-radius: 20px;
+    overflow: hidden;
+  }
+
+  .ph {
+    display: flex;
+    align-items: center;
+    padding: 4px 4px 4px 0;
+  }
+
+  .ph-main {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 10px 0 10px 16px;
+    text-align: left;
+  }
+
+  .sep {
+    height: 1px;
+    background: var(--divider);
+    margin-left: 24px;
+  }
+
+  .add-in {
+    padding-left: 24px;
   }
 
   .page-title {

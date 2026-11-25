@@ -1,7 +1,7 @@
 {
   "name": "logidex",
   "private": true,
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Logidex — ton aide-mémoire pour palais mentaux (méthode des loci).",
   "type": "module",
   "packageManager": "pnpm@10.28.0",

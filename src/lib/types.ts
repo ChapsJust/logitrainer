@@ -26,10 +26,24 @@ export interface QuizResult {
   total: number;
 }
 
-/** Un palais mental = un trajet ordonné de pièces et de loci. */
+export type PlaceIcon = 'home' | 'building' | 'briefcase' | 'tree' | 'map' | 'star';
+
+/** Un lieu réel (École, Maison) qui regroupe plusieurs palais. */
+export interface Place {
+  id: string;
+  name: string;
+  icon: PlaceIcon;
+  createdAt: number;
+}
+
+/** Un palais mental = un trajet ordonné de zones (facultatives) et de loci. */
 export interface Palace {
   id: string;
   name: string;
+  /** Lieu auquel appartient ce palais (facultatif). */
+  placeId?: string;
+  /** Matière ou sujet (facultatif), ex. « Mathématiques ». */
+  subject?: string;
   emoji: string;
   description: string;
   rooms: Room[];
@@ -78,10 +92,13 @@ export interface Settings {
   reminder?: { enabled: boolean; time: string };
   /** Déjà proposé d'activer le rappel. */
   reminderAsked?: boolean;
+  /** Lieux repliés sur l'accueil. */
+  collapsedPlaces?: string[];
 }
 
 export interface Data {
   schema: number;
+  places: Place[];
   palaces: Palace[];
   contents: Content[];
   /** Système de nombres : clé « 00 » à « 99 » → image. */

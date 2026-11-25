@@ -3,7 +3,6 @@
   import Sheet from '../components/Sheet.svelte';
   import Icon from '../components/Icon.svelte';
   import QuizStart from '../components/QuizStart.svelte';
-  import ImageWorkshop from '../components/ImageWorkshop.svelte';
   import Avatar from '../components/Avatar.svelte';
   import {
     db,
@@ -14,8 +13,8 @@
     moveContentToPalace,
     pasteList,
     setArchived,
-    setItem,
     touch,
+    addLocus,
   } from '../store.svelte';
   import { OCCUPANCY_LABEL, neighbours, overlaps, palaceUse } from '../interference';
   import { lociCount, plural } from '../util';
@@ -25,7 +24,9 @@
   import { contentDue, dueLabel } from '../review';
   import { haptic } from '../haptics';
 
-  let { id }: { id: string } = $props();
+  import { tick } from 'svelte';
+
+  let { id, focus }: { id: string; focus?: string } = $props();
 
   const content = $derived(getContent(id));
   const palace = $derived(content ? getPalace(content.palaceId) : undefined);
@@ -64,12 +65,6 @@
   let editInfo = $state(false);
   let quizOpen = $state(false);
 
-  let editIndex = $state(-1);
-  let editOpen = $state(false);
-  let draftText = $state('');
-  let draftImage = $state('');
-  const editing = $derived(flat[editIndex]);
-
   let pasteOpen = $state(false);
   let pasteText = $state('');
   let pasteStart = $state(1);
@@ -80,43 +75,48 @@
       .filter(Boolean),
   );
 
-  function openItem(i: number) {
-    const f = flat[i];
-    if (!f || !content) return;
-    editIndex = i;
-    draftText = content.items[f.locus.id]?.text ?? '';
-    draftImage = content.items[f.locus.id]?.image ?? '';
-    editOpen = true;
-  }
-
-  function commit() {
-    const f = flat[editIndex];
-    if (f && content) {
-      const prev = content.items[f.locus.id];
-      if ((prev?.text ?? '') !== draftText.trim() || (prev?.image ?? '') !== draftImage.trim()) {
-        setItem(content, f.locus.id, { text: draftText, image: draftImage });
-      }
-    }
-  }
-
-  function go(delta: number) {
-    commit();
-    haptic.tick();
-    const next = editIndex + delta;
-    if (next < 0 || next >= flat.length) {
-      editOpen = false;
-      return;
-    }
-    openItem(next);
-  }
-
   function tapRow(i: number, locusId: string) {
     if (hide && !revealed[locusId]) {
       revealed[locusId] = true;
       haptic.tap();
       return;
     }
-    openItem(i);
+    nav.go({ name: 'fill', id, start: i });
+  }
+
+  /** Locus où reprendre le remplissage (0 = premier). */
+  const resumeAt = $derived(content ? Math.max(0, flat.findIndex((f) => !content.items[f.locus.id]?.text)) : 0);
+  const complete = $derived(flat.length > 0 && filled === flat.length);
+
+  /* Arrivée depuis la recherche : défiler jusqu'à l'élément et le surligner. */
+  let flash = $state<string | null>(null);
+  $effect(() => {
+    if (!focus) return;
+    const f = focus;
+    void tick().then(() => {
+      document.querySelector(`[data-locus="${f}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      flash = f;
+      setTimeout(() => (flash = null), 2600);
+      const r = nav.current;
+      if (r.name === 'content') r.focus = undefined;
+    });
+  });
+
+  /* Collage : aperçu complet avant de placer. */
+  const pastePreview = $derived(
+    pasteLines.map((text, i) => ({ text, n: pasteStart + i, f: flat[pasteStart - 1 + i] })),
+  );
+  const missing = $derived(Math.max(0, pasteStart - 1 + pasteLines.length - flat.length));
+
+  function createMissing() {
+    if (!palace || missing <= 0) return;
+    const room = palace.rooms[palace.rooms.length - 1];
+    if (!room) return;
+    // On fige les valeurs : `missing` et `flat` changent à chaque locus ajouté.
+    const count = missing;
+    const from = flat.length + 1;
+    for (let k = 0; k < count; k++) addLocus(palace, room, `Locus ${from + k}`);
+    toast(`${count} loci ajoutés au bout du trajet : renomme-les quand tu veux`);
   }
 
   function doPaste() {
@@ -180,7 +180,7 @@
           <span class="grow">
             <span class="title-m">Mélange possible</span>
             <span class="body-m">
-              {#each ov as o, i (o.content.id)}{i ? ' et ' : ''}Partage {plural(o.count, 'locus', 'loci')} avec « {o.content.title} »{/each}.
+              Partage des loci avec {#each ov as o, i (o.content.id)}{i ? (i === ov.length - 1 ? ' et ' : ', ') : ''}« {o.content.title} » ({o.count}){/each}.
               Les loci concernés sont marqués en orange.
             </span>
           </span>
@@ -207,11 +207,16 @@
         <div class="progress"><span style:width="{(filled / flat.length) * 100}%"></span></div>
       </div>
 
-      <div class="chips">
-        <button class="chip" disabled={filled === 0} onclick={() => (quizOpen = true)}><Icon name="play" />Tester</button>
-        <button class="chip" onclick={() => nav.go({ name: 'walk', palaceId: palace.id, contentId: content.id })}>
-          <Icon name="walk" />Promenade
+      <div class="cta px">
+        <button class="btn filled lg block has-icon" onclick={() => nav.go({ name: 'fill', id, start: complete ? 0 : resumeAt })}>
+          <Icon name="pencil" size={20} />{complete
+            ? 'Revoir et modifier'
+            : filled === 0
+              ? 'Remplir'
+              : `Remplir · reprendre au locus ${resumeAt + 1}`}
         </button>
+      </div>
+      <div class="chips">
         <button
           class="chip"
           onclick={() => {
@@ -219,6 +224,10 @@
             pasteOpen = true;
           }}><Icon name="list" />Coller une liste</button
         >
+        <button class="chip" disabled={filled === 0} onclick={() => (quizOpen = true)}><Icon name="play" />Tester</button>
+        <button class="chip" onclick={() => nav.go({ name: 'walk', palaceId: palace.id, contentId: content.id })}>
+          <Icon name="walk" />Promenade
+        </button>
       </div>
 
       {#if hide}
@@ -229,14 +238,14 @@
         {@const item = content.items[f.locus.id]}
         {@const newRoom = i === 0 || flat[i - 1]?.room.id !== f.room.id}
         {#if showRooms && newRoom}
-          <h2 class="subheader">{f.room.name || 'Pièce sans nom'}</h2>
+          <h2 class="subheader">{f.room.name || 'Zone sans nom'}</h2>
         {:else if i > 0}
           <div class="divider"></div>
         {:else}
           <div style="height: 8px"></div>
         {/if}
         {@const others = item?.text && !content.archived ? neighbours(content, f.locus.id) : []}
-        <button class="list-item two" onclick={() => tapRow(i, f.locus.id)}>
+        <button class="list-item two" class:flash={flash === f.locus.id} data-locus={f.locus.id} onclick={() => tapRow(i, f.locus.id)}>
           <span class="num" class:dashed={!item?.text} class:shared={others.length > 0}>{f.n}</span>
           <span class="li-text">
             <span class="li-over ellipsis">{f.locus.name}</span>
@@ -251,7 +260,7 @@
                 {/if}
               {/if}
             {:else}
-              <span class="li-sup">Toucher pour ajouter</span>
+              <span class="li-sup">À remplir</span>
             {/if}
           </span>
         </button>
@@ -259,68 +268,60 @@
     {/if}
   </div>
 
-  <!-- Élément -->
-  <Sheet bind:open={editOpen} title={editing ? `${editing.n}. ${editing.locus.name}` : ''} onclose={commit}>
-    {#if editing}
-      {#if editing.locus.description}
-        <p class="body-m onv" style="margin: -4px 0 16px">{editing.locus.description}</p>
-      {/if}
-      <label class="tf">
-        <span>À retenir</span>
-        <textarea bind:value={draftText} rows="1" placeholder="Ex. Hydrogène"></textarea>
-      </label>
-      <label class="tf">
-        <span>Image mentale (facultatif)</span>
-        <textarea bind:value={draftImage} rows="2" placeholder="Ex. un dirigeable explose contre la porte"></textarea>
-      </label>
-      <p class="helper">Fais interagir l'élément avec le lieu : mouvement, son, exagération.</p>
-      <ImageWorkshop
-        element={draftText}
-        bind:image={draftImage}
-        locusId={editing.locus.id}
-        locus={editing.locus.name}
-        locusDescription={editing.locus.description}
-        room={editing.room.name}
-        contentTitle={content.title}
-      />
-    {/if}
-    {#snippet footer()}
-      <button class="btn outlined has-icon" disabled={editIndex <= 0} onclick={() => go(-1)}>
-        <Icon name="back" size={18} />Préc.
-      </button>
-      <span class="grow"></span>
-      <button class="btn filled" onclick={() => go(1)}>
-        {editIndex >= flat.length - 1 ? 'Terminer' : 'Suivant'}
-      </button>
-    {/snippet}
-  </Sheet>
-
   <!-- Coller une liste -->
   <Sheet bind:open={pasteOpen} title="Coller une liste">
-    <p class="body-m onv" style="margin-bottom: 16px">
-      Une ligne = un élément, placé sur le locus suivant. Les numéros en début de ligne sont retirés.
-    </p>
     <label class="tf">
-      <span>Liste</span>
-      <textarea bind:value={pasteText} rows="6" placeholder={'Hydrogène\nHélium\nLithium'}></textarea>
-    </label>
-    <label class="tf">
-      <span>Commencer au locus</span>
-      <input type="number" min="1" max={flat.length} bind:value={pasteStart} />
+      <span>Ta liste (une ligne = un élément)</span>
+      <textarea bind:value={pasteText} rows="4" placeholder={'Hydrogène\nHélium\nLithium'}></textarea>
     </label>
     {#if pasteLines.length > 0}
-      <p class="body-m onv">
-        {pasteLines.length} ligne(s) → loci {pasteStart} à {pasteStart + pasteLines.length - 1}
-      </p>
-      {#if pasteStart + pasteLines.length - 1 > flat.length}
-        <p class="body-m" style="color: var(--error)">
-          Il manque {pasteStart + pasteLines.length - 1 - flat.length} loci dans ce palais.
-        </p>
+      <div class="row" style="justify-content: space-between; margin: -4px 0 6px">
+        <span class="label-l primary">Aperçu</span>
+        <span class="row" style="gap: 6px">
+          <span class="body-m onv">Commencer au locus</span>
+          <button class="step" disabled={pasteStart <= 1} onclick={() => (pasteStart = Math.max(1, pasteStart - 1))} aria-label="Moins"><Icon name="minus" size={16} /></button>
+          <b class="stepv">{pasteStart}</b>
+          <button class="step" disabled={pasteStart >= flat.length} onclick={() => (pasteStart = Math.min(flat.length, pasteStart + 1))} aria-label="Plus"><Icon name="plus" size={16} /></button>
+        </span>
+      </div>
+      <div class="preview">
+        {#each pastePreview.slice(0, 4) as r (r.n)}
+          {@const replaced = r.f && content.items[r.f.locus.id]?.text}
+          <div class="pv" class:warn={!r.f}>
+            <span class="num">{r.n}</span>
+            <span class="loc ellipsis">{r.f ? r.f.locus.name : 'pas de locus'}</span>
+            <span class="onv">→</span>
+            <b class="ellipsis">{r.text}</b>
+            {#if replaced}<span class="label-m onv">remplace</span>{/if}
+          </div>
+        {/each}
+        {#if pastePreview.length > 6}
+          <div class="pv more body-m onv">⋮ {pastePreview.length - 6} autres</div>
+        {/if}
+        {#each pastePreview.slice(Math.max(4, pastePreview.length - 2)) as r (r.n)}
+          <div class="pv" class:warn={!r.f}>
+            <span class="num">{r.n}</span>
+            <span class="loc ellipsis">{r.f ? r.f.locus.name : 'pas de locus'}</span>
+            <span class="onv">→</span>
+            <b class="ellipsis">{r.text}</b>
+          </div>
+        {/each}
+      </div>
+      {#if missing > 0}
+        <div class="card-warn missing">
+          <Icon name="alert" />
+          <span class="body-m grow">Il manque {plural(missing, 'locus', 'loci')} dans ce palais</span>
+          <button class="btn filled warn-fill" onclick={createMissing}>Créer {missing}</button>
+        </div>
       {/if}
+    {:else}
+      <p class="body-m onv">Colle ou écris ta liste : tu verras exactement où chaque élément sera placé avant de valider.</p>
     {/if}
     {#snippet footer()}
       <button class="btn text" onclick={() => (pasteOpen = false)}>Annuler</button>
-      <button class="btn filled" disabled={pasteLines.length === 0} onclick={doPaste}>Placer</button>
+      <button class="btn filled" disabled={pasteLines.length === 0} onclick={doPaste}>
+        Placer {pasteLines.length - missing > 0 ? pasteLines.length - missing : ''} élément{pasteLines.length - missing > 1 ? 's' : ''}
+      </button>
     {/snippet}
   </Sheet>
 
@@ -416,6 +417,97 @@
     font-weight: 500;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
+  }
+
+  .cta {
+    margin-top: 16px;
+  }
+
+  .list-item.flash {
+    background: var(--pc);
+    border-radius: 16px;
+    box-shadow: inset 0 0 0 2px var(--p);
+  }
+
+  .preview {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .pv {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--divider);
+    min-width: 0;
+  }
+
+  .pv .num {
+    width: 30px;
+    height: 30px;
+    font-size: 13px;
+  }
+
+  .pv .loc {
+    width: 120px;
+    flex-shrink: 0;
+    color: var(--onv);
+    font-size: 14px;
+  }
+
+  .pv b {
+    font-weight: 500;
+    min-width: 0;
+    flex: 1;
+  }
+
+  .pv.warn .num {
+    background: var(--warn-c);
+    color: var(--onwarn-c);
+  }
+
+  .pv.warn .loc {
+    color: var(--warn);
+  }
+
+  .pv.more {
+    justify-content: center;
+    border: none;
+  }
+
+  .missing {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 12px;
+    padding: 10px 10px 10px 14px;
+  }
+
+  .warn-fill {
+    background: var(--warn);
+    color: var(--warn-c);
+    height: 36px;
+    padding: 0 14px;
+  }
+
+  .step {
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    border: 1px solid var(--outline);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .step:disabled {
+    opacity: 0.35;
+  }
+
+  .stepv {
+    min-width: 22px;
+    text-align: center;
   }
 
   .banner {

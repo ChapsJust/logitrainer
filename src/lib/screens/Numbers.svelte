@@ -1,213 +1,191 @@
 <script lang="ts">
   import TopBar from '../components/TopBar.svelte';
-  import Sheet from '../components/Sheet.svelte';
   import Icon from '../components/Icon.svelte';
   import QuizStart from '../components/QuizStart.svelte';
+  import SoundsSheet from '../components/SoundsSheet.svelte';
   import { db } from '../store.svelte';
-  import { MAJOR, MAJOR_EXAMPLES, NUMBER_KEYS, majorHint } from '../major';
-  import { haptic } from '../haptics';
+  import { MAJOR_WORDS, NUMBER_KEYS, majorHint, numberPairs } from '../major';
+  import { nav } from '../nav.svelte';
 
-  let explainOpen = $state(false);
+  let soundsOpen = $state(false);
   let quizOpen = $state(false);
-  let editKey = $state<string | null>(null);
-  let editOpen = $state(false);
-  let draft = $state('');
+  let convert = $state('');
 
   const filled = $derived(NUMBER_KEYS.filter((k) => db.numbers[k]?.trim()).length);
-  const editIdx = $derived(editKey ? NUMBER_KEYS.indexOf(editKey) : -1);
+  const firstEmpty = $derived(NUMBER_KEYS.find((k) => !db.numbers[k]?.trim()) ?? '00');
+  // svelte-ignore state_referenced_locally
+  let ten = $state(firstEmpty.slice(0, 1));
+  const shown = $derived(NUMBER_KEYS.filter((k) => k.startsWith(ten)));
+  const converted = $derived(numberPairs(convert));
 
-  function open(k: string) {
-    editKey = k;
-    draft = db.numbers[k] ?? '';
-    editOpen = true;
-  }
-
-  function commit() {
-    if (!editKey) return;
-    const v = draft.trim();
-    if (v) db.numbers[editKey] = v;
-    else delete db.numbers[editKey];
-  }
-
-  function go(delta: number) {
-    commit();
-    haptic.tick();
-    const next = NUMBER_KEYS[editIdx + delta];
-    if (!next) {
-      editOpen = false;
-      return;
-    }
-    open(next);
-  }
+  const open = (k: string) => nav.go({ name: 'numbers-create', start: k });
 </script>
 
 <TopBar title="Nombres">
   {#snippet actions()}
-    <button class="btn text has-icon" onclick={() => (quizOpen = true)} disabled={filled === 0}>
-      <Icon name="play" size={18} />Tester
-    </button>
+    <button class="btn text has-icon" onclick={() => (quizOpen = true)} disabled={filled === 0}><Icon name="play" size={18} />Tester</button>
   {/snippet}
 </TopBar>
 
 <div class="page">
-  <p class="body-m page-sub">{filled} / 100 images</p>
-  <div class="px" style="margin-top: 12px">
-    <div class="progress"><span style:width="{filled}%"></span></div>
+  <div class="card-tonal explain">
+    <p class="title-m">Chaque chiffre = un son. Tu ajoutes des voyelles pour faire un mot.</p>
+    <div class="eq">
+      <span class="d">3</span>= <b class="so">M</b>
+      <span class="d" style="margin-left: 8px">4</span>= <b class="so">R</b>
+      <span class="grow"></span>
+      <span>34 → <b>M</b>u<b>R</b> = « mur »</span>
+    </div>
+    <button class="link body-m" onclick={() => (soundsOpen = true)}>Voir les 10 sons et leurs astuces</button>
   </div>
 
-  <button class="intro card-outlined" onclick={() => (explainOpen = true)}>
-    <Icon name="info" class="primary" />
-    <span class="grow">
-      <span class="title-m">C'est quoi, un système de nombres ?</span>
-      <span class="body-m onv">
-        On associe à chaque nombre de 00 à 99 une image concrète. Les chiffres deviennent faciles à placer dans un palais.
-      </span>
+  <label class="conv card-outlined">
+    <span class="label-m onv">Convertir un nombre</span>
+    <span class="row" style="flex-wrap: wrap; gap: 6px 10px">
+      <input bind:value={convert} inputmode="numeric" placeholder="Ex. 1789" class="title-l" />
+      {#each converted as g (g.raw)}
+        {#each g.pairs as p, i (i)}
+          <button class="chip plain" class:selected={!!db.numbers[p]} onclick={() => open(p)}>
+            {p} · {db.numbers[p] ?? '?'}
+          </button>
+        {/each}
+      {/each}
     </span>
-  </button>
+  </label>
 
-  <div class="grid">
-    {#each NUMBER_KEYS as k (k)}
-      {@const v = db.numbers[k]}
-      <button class="cell st" class:filled={!!v} onclick={() => open(k)}>
-        <span class="n">{k}</span>
-        <span class="v ellipsis">{v || majorHint(k)}</span>
-      </button>
+  <div class="row prog">
+    <div class="progress grow"><span style:width="{filled}%"></span></div>
+    <span class="label-m onv">{filled} / 100</span>
+    {#if filled < 100}
+      <button class="btn filled" onclick={() => open(firstEmpty)}>{filled ? 'Créer les suivantes' : 'Commencer'}</button>
+    {/if}
+  </div>
+
+  <div class="chips tens">
+    {#each ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'] as t (t)}
+      <button class="chip plain" class:selected={ten === t} onclick={() => (ten = t)}>{t}0</button>
     {/each}
   </div>
+
+  <div style="height: 6px"></div>
+  {#each shown as k (k)}
+    {@const v = db.numbers[k]}
+    <button class="list-item two nr" onclick={() => open(k)}>
+      <span class="nb" class:todo={!v}>{k}</span>
+      <span class="li-text">
+        {#if v}
+          <span class="li-head">{v}</span>
+          <span class="li-sup">sons <b class="primary">{majorHint(k)}</b></span>
+        {:else}
+          <span class="li-sup">À créer · sons <b class="primary">{majorHint(k)}</b></span>
+          <span class="sug">
+            {#each (MAJOR_WORDS[k] ?? []).slice(0, 3) as w (w)}<span>{w}</span>{/each}
+          </span>
+        {/if}
+      </span>
+    </button>
+  {/each}
 </div>
 
-<Sheet bind:open={editOpen} title={editKey ? `Nombre ${editKey}` : ''} onclose={commit}>
-  {#if editKey}
-    <p class="body-m onv" style="margin: -4px 0 16px">
-      Sons du système majeur : <b>{majorHint(editKey)}</b>{#if MAJOR_EXAMPLES[editKey]}, par ex. « {MAJOR_EXAMPLES[editKey]} »{/if}
-    </p>
-    <label class="tf">
-      <span>Ton image pour {editKey}</span>
-      <input
-        bind:value={draft}
-        placeholder="Un objet ou un personnage concret"
-        enterkeyhint="next"
-        onkeydown={(e) => {
-          if (e.key === 'Enter') {
-            e.preventDefault();
-            go(1);
-          }
-        }}
-      />
-    </label>
-  {/if}
-  {#snippet footer()}
-    <button class="btn outlined has-icon" disabled={editIdx <= 0} onclick={() => go(-1)}><Icon name="back" size={18} />Préc.</button>
-    <span class="grow"></span>
-    <button class="btn filled" onclick={() => go(1)}>{editIdx >= 99 ? 'Terminer' : 'Suivant'}</button>
-  {/snippet}
-</Sheet>
-
-<Sheet bind:open={explainOpen} title="Systèmes de nombres">
-  <div class="explain body-m">
-    <p>
-      Pour retenir des nombres (codes, dates, téléphones, π…), on transforme chaque paire de chiffres en une <b>image</b>, qu'on
-      dépose ensuite sur un locus. Ex. 1789 → « 17 » + « 89 » → deux images sur deux loci.
-    </p>
-    <p class="title-m">Le système majeur</p>
-    <p>Chaque chiffre = un son de consonne. Les voyelles sont libres, tu les ajoutes pour former un mot.</p>
-    <div class="major">
-      {#each Object.entries(MAJOR) as [d, s] (d)}
-        <span><b>{d}</b>&nbsp;&nbsp;{s}</span>
-      {/each}
-    </div>
-    <p>
-      Ex. <b>31</b> = m + t → « mot », <b>42</b> = r + n → « reine », <b>91</b> = p + t → « patte ». On compte les
-      <i>sons</i>, pas les lettres muettes.
-    </p>
-    <p class="title-m">Variantes avancées</p>
-    <p>
-      <b>PAO</b> (Personne-Action-Objet) : chaque nombre a une personne, une action et un objet. 6 chiffres tiennent dans une
-      seule scène. C'est la méthode des champions de mémoire.
-    </p>
-    <p><b>Dominic</b> : chaque chiffre = une lettre, chaque paire = les initiales d'une personne connue.</p>
-    <p class="title-m">Pour commencer</p>
-    <p>Remplis tes images une fois pour toutes (touche un nombre, puis Suivant), puis teste-toi jusqu'à ce que ce soit automatique.</p>
-  </div>
-</Sheet>
-
+<SoundsSheet bind:open={soundsOpen} />
 <QuizStart bind:open={quizOpen} kind="numbers" explain="On te montre un nombre, tu retrouves ton image." />
 
 <style>
-  .intro {
-    display: flex;
-    gap: 16px;
-    margin: 16px;
-    width: calc(100% - 32px);
-    text-align: left;
-  }
-
-  .intro .grow {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-  }
-
-  .grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
-    gap: 8px;
-    padding: 0 16px;
-  }
-
-  .cell {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    padding: 12px;
-    border-radius: 12px;
-    background: var(--surface-low);
-    text-align: left;
-    min-width: 0;
-    color: var(--onv);
-  }
-
-  .cell.filled {
-    background: var(--sc);
-    color: var(--onsc);
-  }
-
-  .n {
-    font-size: 20px;
-    line-height: 28px;
-    font-weight: 500;
-    color: var(--on);
-  }
-
-  .cell.filled .n {
-    color: var(--onsc);
-  }
-
-  .v {
-    font-size: 13px;
-    width: 100%;
-  }
-
-  .cell.filled .v {
-    font-weight: 500;
-  }
-
   .explain {
+    margin: 4px 16px 0;
+  }
+
+  .eq {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 10px;
+    flex-wrap: wrap;
+  }
+
+  .eq .d {
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+    background: var(--surface);
+    color: var(--on);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+    font-size: 17px;
+  }
+
+  .so {
+    color: var(--p);
+  }
+
+  .link {
+    text-decoration: underline;
+    margin-top: 10px;
+    color: inherit;
+  }
+
+  .conv {
     display: flex;
     flex-direction: column;
+    gap: 4px;
+    margin: 12px 16px 0;
+    padding: 10px 14px;
+  }
+
+  .conv input {
+    border: none;
+    outline: none;
+    background: transparent;
+    width: 110px;
+    padding: 0;
+  }
+
+  .prog {
+    padding: 16px 16px 0;
     gap: 12px;
   }
 
-  .explain .title-m {
-    margin-top: 8px;
+  .tens {
+    padding-top: 14px;
   }
 
-  .major {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 8px;
-    padding: 16px;
-    border-radius: 16px;
+  .nr {
+    min-height: 68px;
+  }
+
+  .nb {
+    width: 48px;
+    height: 48px;
+    border-radius: 14px;
+    background: var(--pc);
+    color: var(--onpc);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 19px;
+    font-weight: 600;
+    flex-shrink: 0;
+  }
+
+  .nb.todo {
+    background: transparent;
+    border: 1.5px dashed var(--outline-v);
+    color: var(--onv);
+  }
+
+  .sug {
+    display: flex;
+    gap: 6px;
+    margin-top: 4px;
+    flex-wrap: wrap;
+  }
+
+  .sug span {
+    font-size: 12.5px;
+    padding: 2px 8px;
+    border-radius: 8px;
     background: var(--surface-high);
   }
 </style>

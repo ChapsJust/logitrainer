@@ -11,15 +11,17 @@
 import type { Data } from './types';
 import { uid } from './util';
 
-export const CURRENT_SCHEMA = 1;
+export const CURRENT_SCHEMA = 2;
 
 type Raw = Record<string, unknown> & { schema?: number };
 
 /** Clé = version de départ ; la fonction produit la version suivante. */
 const MIGRATIONS: Record<number, (d: Raw) => Raw> = {
-  // Exemple pour une future version 2 :
-  // 1: (d) => ({ ...d, places: [] }),
+  // 1 → 2 (v0.4) : ajout des lieux. Les palais existants restent tels quels, sans lieu.
+  1: (d) => ({ ...d, places: Array.isArray(d.places) ? d.places : [] }),
 };
+
+const PLACE_ICONS = ['home', 'building', 'briefcase', 'tree', 'map', 'star'];
 
 export class NewerDataError extends Error {
   constructor(public version: number) {
@@ -60,10 +62,25 @@ export function parseData(json: string): { data: Data; from: number } {
   const { data: raw, from } = migrate(root);
   const now = Date.now();
 
+  const places = arr(raw.places).map((lv) => {
+    const l = obj(lv);
+    return {
+      ...l,
+      id: str(l.id) || uid(),
+      name: str(l.name, 'Lieu'),
+      icon: PLACE_ICONS.includes(str(l.icon)) ? str(l.icon) : 'building',
+      createdAt: num(l.createdAt, now),
+    };
+  });
+  const placeIds = new Set(places.map((l) => l.id));
+
   const palaces = arr(raw.palaces).map((pv) => {
     const p = obj(pv);
+    const placeId = str(p.placeId);
     return {
       ...p,
+      placeId: placeIds.has(placeId) ? placeId : undefined,
+      subject: str(p.subject) || undefined,
       id: str(p.id) || uid(),
       name: str(p.name, 'Palais'),
       emoji: str(p.emoji),
@@ -110,7 +127,7 @@ export function parseData(json: string): { data: Data; from: number } {
   const settings = { theme: 'auto', ...obj(raw.settings) };
 
   return {
-    data: { ...raw, schema: CURRENT_SCHEMA, palaces, contents, numbers, settings } as unknown as Data,
+    data: { ...raw, schema: CURRENT_SCHEMA, places, palaces, contents, numbers, settings } as unknown as Data,
     from,
   };
 }
